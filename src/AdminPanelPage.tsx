@@ -1,0 +1,2612 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useApp } from './AppContext';
+import { CATEGORIES } from './constants';
+import { User, Book, Category, Note } from './types';
+import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+export const AdminPanelPage: React.FC = () => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [deletedBooks, setDeletedBooks] = useState<Book[]>([]);
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [supportMessages, setSupportMessages] = useState<any[]>([]);
+  const [selectedChatUser, setSelectedChatUser] = useState<{user_id: number | string, username: string} | null>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [replyMessage, setReplyMessage] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [lockAllCategories, setLockAllCategories] = useState(false);
+  const [activeTab, setActiveTab] = useState<'books' | 'users' | 'recycle' | 'settings' | 'referrals' | 'notifications' | 'categories' | 'subscriptions' | 'support'>('books');
+  const [userSearch, setUserSearch] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'pending' | 'blocked' | 'active' | 'online' | 'offline' | 'expired'>('all');
+  const [bookSearch, setBookSearch] = useState('');
+  const [recycleSearch, setRecycleSearch] = useState('');
+  const [referralSearch, setReferralSearch] = useState('');
+  const [categorySearch, setCategorySearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userNotes, setUserNotes] = useState<Note[]>([]);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const { t } = useApp();
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Settings State
+  const [homeText, setHomeText] = useState('');
+  const [homeFontSize, setHomeFontSize] = useState(16);
+  const [authText, setAuthText] = useState('');
+  const [smsSupportNumber, setSmsSupportNumber] = useState('');
+
+  // Book Form State
+  const [editingBookId, setEditingBookId] = useState<number | null>(null);
+  const [title, setTitle] = useState('');
+  const [author, setAuthor] = useState('');
+  const [coverUrl, setCoverUrl] = useState('');
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [category, setCategory] = useState('New book');
+  const [description, setDescription] = useState('');
+  const [pages, setPages] = useState<string[]>(['']);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
+  const [editingPasswordUserId, setEditingPasswordUserId] = useState<number | null>(null);
+  const [editingOrderBookId, setEditingOrderBookId] = useState<number | null>(null);
+  const [newOrderIndex, setNewOrderIndex] = useState<number>(0);
+  const [newPassword, setNewPassword] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [userDeleteConfirmId, setUserDeleteConfirmId] = useState<number | null>(null);
+  const [permDeleteConfirmId, setPermDeleteConfirmId] = useState<number | null>(null);
+  const [restoreConfirmId, setRestoreConfirmId] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [editingTrialUserId, setEditingTrialUserId] = useState<number | null>(null);
+  const [newTrialDate, setNewTrialDate] = useState('');
+
+  // Category Form State
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategoryPassword, setEditCategoryPassword] = useState('');
+  const [editCategorySortIndex, setEditCategorySortIndex] = useState<number>(0);
+
+  // Notification Form State
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifType, setNotifType] = useState('info');
+  const [notifUserId, setNotifUserId] = useState<number | null>(null);
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (user.role !== 'admin') {
+      navigate('/');
+      return;
+    }
+    fetchUsers();
+    fetchBooks();
+    fetchDeletedBooks();
+    fetchSettings();
+    fetchReferrals();
+    fetchNotifications();
+    fetchCategories();
+    fetchSubscriptions();
+    fetchSupportMessages();
+  }, []);
+
+  const fetchSupportMessages = async () => {
+    try {
+      const res = await fetch('/api/admin/support/messages');
+      const data = await res.json();
+      setSupportMessages(data);
+    } catch (err) {
+      console.error("Error fetching support messages:", err);
+    }
+  };
+
+  const fetchChatMessages = async (userId: number | string) => {
+    try {
+      const res = await fetch(`/api/admin/support/messages/${userId}`);
+      const data = await res.json();
+      setChatMessages(data);
+      // Refresh user list to update unread counts
+      fetchSupportMessages();
+    } catch (err) {
+      console.error("Error fetching chat messages:", err);
+    }
+  };
+
+  const handleSendReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!replyMessage.trim() || !selectedChatUser) return;
+
+    const currentReply = replyMessage.trim();
+    setReplyMessage('');
+    setIsSendingReply(true);
+
+    try {
+      const res = await fetch('/api/support/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: selectedChatUser.user_id,
+          username: selectedChatUser.username,
+          message: currentReply,
+          sender_role: 'admin'
+        }),
+      });
+
+      if (res.ok) {
+        fetchChatMessages(selectedChatUser.user_id);
+      } else {
+        showToast('রিপ্লাই পাঠানো যায়নি।', 'error');
+        setReplyMessage(currentReply);
+      }
+    } catch (err) {
+      showToast('সার্ভার এরর!', 'error');
+      setReplyMessage(currentReply);
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
+
+  const handleDeleteChat = async (userId: number | string) => {
+    if (!confirm('Are you sure you want to delete this entire chat?')) return;
+    try {
+      await fetch(`/api/admin/support/chat/${userId}`, { method: 'DELETE' });
+      setSelectedChatUser(null);
+      fetchSupportMessages();
+      showToast('চ্যাট ডিলিট করা হয়েছে!');
+    } catch (err) {
+      console.error("Error deleting chat:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedChatUser) {
+      const interval = setInterval(() => fetchChatMessages(selectedChatUser.user_id), 5000);
+      return () => clearInterval(interval);
+    }
+  }, [selectedChatUser]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  useEffect(() => {
+    if (activeTab === 'support') {
+      fetchSupportMessages();
+      const interval = setInterval(fetchSupportMessages, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
+
+  const fetchSubscriptions = async () => {
+    try {
+      const res = await fetch('/api/admin/subscriptions');
+      const data = await res.json();
+      setSubscriptions(data);
+    } catch (error) {
+      console.error('Error fetching subscriptions:', error);
+    }
+  };
+
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+  const [confirmConfig, setConfirmConfig] = useState<{ message: string, onConfirm: () => void } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleConfirm = (message: string, onConfirm: () => void) => {
+    setConfirmConfig({ message, onConfirm });
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/categories');
+      const data = await res.json();
+      setCategories(data.categories);
+      setLockAllCategories(data.lockAll);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/notifications?isAdmin=true');
+      const data = await res.json();
+      setNotifications(data);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+    setIsAddingCategory(true);
+    try {
+      const res = await fetch('/api/admin/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCategoryName }),
+      });
+      if (res.ok) {
+        setNewCategoryName('');
+        fetchCategories();
+        showToast('ক্যাটাগরি যোগ করা হয়েছে!');
+      } else {
+        const data = await res.json();
+        showToast(data.error || 'Failed to add category', 'error');
+      }
+    } catch (error) {
+      console.error('Error adding category:', error);
+    } finally {
+      setIsAddingCategory(false);
+    }
+  };
+
+  const handleUpdateCategory = async (id: number, updates: Partial<Category>) => {
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        fetchCategories();
+        setEditingCategoryId(null);
+        setEditCategoryPassword('');
+      }
+    } catch (error) {
+      console.error('Error updating category:', error);
+    }
+  };
+
+  const handleDeleteCategory = async (id: number) => {
+    handleConfirm('Are you sure you want to delete this category?', async () => {
+      try {
+        const res = await fetch(`/api/admin/categories/${id}`, {
+          method: 'DELETE',
+        });
+        if (res.ok) {
+          fetchCategories();
+          showToast('ক্যাটাগরি ডিলিট করা হয়েছে!');
+        }
+      } catch (error) {
+        console.error('Error deleting category:', error);
+      }
+    });
+  };
+
+  const handleToggleLockAll = async (lock: boolean) => {
+    try {
+      const res = await fetch('/api/admin/settings/lock-categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lockAll: lock }),
+      });
+      if (res.ok) {
+        setLockAllCategories(lock);
+      }
+    } catch (error) {
+      console.error('Error toggling lock all:', error);
+    }
+  };
+
+  const handleSendNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifTitle.trim() || !notifMessage.trim()) return;
+
+    setIsSendingNotif(true);
+    try {
+      const res = await fetch('/api/admin/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          title: notifTitle, 
+          message: notifMessage, 
+          type: notifType,
+          userId: notifUserId 
+        }),
+      });
+      if (res.ok) {
+        showToast('নোটিফিকেশন পাঠানো হয়েছে!');
+        setNotifTitle('');
+        setNotifMessage('');
+        setNotifUserId(null);
+        fetchNotifications();
+      }
+    } catch (error) {
+      console.error('Error sending notification:', error);
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
+  const handleDeleteNotification = async (id: number) => {
+    handleConfirm('আপনি কি নিশ্চিতভাবে এই নোটিফিকেশনটি ডিলিট করতে চান?', async () => {
+      try {
+        const res = await fetch(`/api/admin/notifications/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          fetchNotifications();
+          showToast('নোটিফিকেশন ডিলিট করা হয়েছে!');
+        }
+      } catch (error) {
+        console.error('Error deleting notification:', error);
+      }
+    });
+  };
+
+  const AdminNotificationItem: React.FC<{ notif: any, onDelete: (id: number) => void }> = ({ notif, onDelete }) => {
+    const [replies, setReplies] = useState<any[]>([]);
+    const [showReplies, setShowReplies] = useState(false);
+
+    useEffect(() => {
+      if (showReplies) {
+        fetchReplies();
+      }
+    }, [showReplies]);
+
+    const fetchReplies = async () => {
+      const res = await fetch(`/api/notifications/${notif.id}/replies`);
+      const data = await res.json();
+      setReplies(data);
+    };
+
+    return (
+      <div className="p-4 flex flex-col hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+        <div className="flex items-start justify-between">
+          <div className="flex gap-4">
+            <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+              notif.type === 'success' ? 'bg-emerald-500' :
+              notif.type === 'warning' ? 'bg-amber-500' :
+              notif.type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+            }`} />
+            <div>
+              <div className="font-black text-sm">{notif.title}</div>
+              <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">{notif.message}</div>
+              <div className="flex items-center gap-3 mt-2">
+                <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest">
+                  {new Date(notif.created_at).toLocaleString('en-GB')}
+                </div>
+                {notif.user_id ? (
+                  <div className="text-[9px] px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-widest rounded-md">
+                    To: {notif.user_name || `User #${notif.user_id}`}
+                  </div>
+                ) : (
+                  <div className="text-[9px] px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-black uppercase tracking-widest rounded-md">
+                    Global
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowReplies(!showReplies)}
+              className={`p-2 rounded-lg transition-colors ${showReplies ? 'bg-indigo-100 text-indigo-600' : 'text-zinc-400 hover:bg-zinc-100'}`}
+              title="উত্তরগুলো দেখুন"
+            >
+              <MessageSquare size={16} />
+            </button>
+            <button
+              onClick={() => onDelete(notif.id)}
+              className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+
+        {showReplies && (
+          <div className="mt-4 pl-6 border-l-2 border-indigo-100 dark:border-indigo-900/30 space-y-3 animate-in slide-in-from-left-2 duration-200">
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">ইউজারদের উত্তরসমূহ ({replies.length})</h4>
+            <div className="space-y-2">
+              {replies.map(reply => (
+                <div key={reply.id} className="bg-zinc-100 dark:bg-zinc-800/50 p-3 rounded-xl">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{reply.username}</span>
+                    <span className="text-[8px] text-zinc-400">{new Date(reply.created_at).toLocaleString()}</span>
+                  </div>
+                  <div className="text-xs text-zinc-700 dark:text-zinc-300">{reply.reply}</div>
+                </div>
+              ))}
+              {replies.length === 0 && (
+                <div className="text-xs text-zinc-400 font-bold py-2">এখনো কেউ উত্তর দেয়নি</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const fetchReferrals = async () => {
+    try {
+      const res = await fetch('/api/admin/referrals');
+      const data = await res.json();
+      setReferrals(data);
+    } catch (error) {
+      console.error('Error fetching referrals:', error);
+    }
+  };
+
+  const fetchSettings = async () => {
+    const res = await fetch('/api/settings');
+    const data = await res.json();
+    setHomeText(data.home_text || '');
+    setHomeFontSize(parseInt(data.home_font_size) || 16);
+    setAuthText(data.auth_text || '');
+    setSmsSupportNumber(data.sms_support_number || '');
+  };
+
+  const fetchUsers = async () => {
+    const res = await fetch('/api/admin/users');
+    const data = await res.json();
+    const mappedUsers = data.map((u: any) => ({
+      ...u,
+      isPaid: !!u.is_paid,
+      fullName: u.full_name,
+      profilePicture: u.profile_picture,
+      trialEndsAt: u.trial_ends_at,
+      last_login_at: u.last_login_at,
+      last_active_at: u.last_active_at,
+      latitude: u.latitude,
+      longitude: u.longitude,
+      location_name: u.location_name
+    }));
+    setUsers(mappedUsers);
+  };
+
+  const fetchBooks = async () => {
+    const res = await fetch('/api/books');
+    const data = await res.json();
+    setBooks(data);
+  };
+
+  const fetchDeletedBooks = async () => {
+    const res = await fetch('/api/admin/books/deleted');
+    const data = await res.json();
+    setDeletedBooks(data);
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setImagePreview(base64String);
+        setCoverUrl(base64String);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUserStatus = async (userId: number, status: string) => {
+    await fetch('/api/admin/users/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, status }),
+    });
+    fetchUsers();
+  };
+
+  const fetchUserNotes = async (userId: number) => {
+    setLoadingNotes(true);
+    try {
+      const res = await fetch(`/api/users/${userId}/all-notes`);
+      const data = await res.json();
+      setUserNotes(data);
+      setShowNotesModal(true);
+    } catch (error) {
+      console.error("Failed to fetch notes");
+    } finally {
+      setLoadingNotes(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    if (userDeleteConfirmId !== userId) {
+      setUserDeleteConfirmId(userId);
+      setTimeout(() => setUserDeleteConfirmId(null), 3000);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchUsers();
+        setUserDeleteConfirmId(null);
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!editingPasswordUserId || !newPassword.trim()) return;
+    
+    const res = await fetch('/api/admin/users/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: editingPasswordUserId, password: newPassword.trim() }),
+    });
+
+    if (res.ok) {
+      showToast('পাসওয়ার্ড আপডেট হয়েছে!');
+      setEditingPasswordUserId(null);
+      setNewPassword('');
+      fetchUsers();
+    }
+  };
+
+  const handleUpdateOrder = async () => {
+    if (!editingOrderBookId) return;
+    
+    const res = await fetch('/api/admin/books/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookId: editingOrderBookId, index: newOrderIndex }),
+    });
+
+    if (res.ok) {
+      showToast('সিরিয়াল আপডেট হয়েছে!');
+      setEditingOrderBookId(null);
+      fetchBooks();
+    }
+  };
+
+  const handleUpdateTrial = async (userId: number) => {
+    if (!newTrialDate) return;
+    try {
+      const res = await fetch('/api/admin/users/trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, trialEndsAt: new Date(newTrialDate).toISOString() }),
+      });
+      if (res.ok) {
+        showToast('মেয়াদ আপডেট হয়েছে!');
+        setEditingTrialUserId(null);
+        fetchUsers();
+      }
+    } catch (error) {
+      console.error('Error updating trial date:', error);
+    }
+  };
+
+  const handleApproveSubscription = async (subId: number, userId: number) => {
+    handleConfirm('আপনি কি নিশ্চিতভাবে এই সাবস্ক্রিপশনটি এপ্রুভ করতে চান?', async () => {
+      try {
+        const res = await fetch('/api/admin/subscriptions/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscriptionId: subId, userId }),
+        });
+        if (res.ok) {
+          showToast('সাবস্ক্রিপশন এপ্রুভ হয়েছে!');
+          fetchSubscriptions();
+          fetchUsers();
+        }
+      } catch (error) {
+        console.error('Error approving subscription:', error);
+      }
+    });
+  };
+
+  const handleRejectSubscription = async (subId: number, userId: number) => {
+    handleConfirm('আপনি কি নিশ্চিতভাবে এই সাবস্ক্রিপশনটি রিজেক্ট করতে চান?', async () => {
+      try {
+        const res = await fetch('/api/admin/subscriptions/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscriptionId: subId, userId }),
+        });
+        if (res.ok) {
+          showToast('সাবস্ক্রিপশন রিজেক্ট হয়েছে!');
+          fetchSubscriptions();
+        }
+      } catch (error) {
+        console.error('Error rejecting subscription:', error);
+      }
+    });
+  };
+
+  const handleSaveBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!coverUrl) {
+      showToast('অনুগ্রহ করে একটি ছবি নির্বাচন করুন', 'error');
+      return;
+    }
+
+    const endpoint = editingBookId ? `/api/admin/books/${editingBookId}` : '/api/admin/books';
+    const method = editingBookId ? 'PUT' : 'POST';
+
+    const finalCategory = category.includes('New book') ? category : `New book, ${category}`;
+
+    const res = await fetch(endpoint, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        title, 
+        author, 
+        cover_url: coverUrl, 
+        pdf_url: pdfUrl,
+        category: finalCategory,
+        content: JSON.stringify(pages.filter(p => p.trim() !== '')), 
+        description: description
+      }),
+    });
+
+    if (res.ok) {
+      showToast(editingBookId ? 'বইটি আপডেট করা হয়েছে!' : 'বইটি সফলভাবে যোগ করা হয়েছে!');
+      resetForm();
+      fetchBooks();
+    }
+  };
+
+  const handleUpdateSettings = async () => {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        home_text: homeText, 
+        home_font_size: homeFontSize, 
+        auth_text: authText,
+        sms_support_number: smsSupportNumber
+      }),
+    });
+    if (res.ok) {
+      showToast('সেটিংস আপডেট করা হয়েছে!');
+    }
+  };
+
+  const copyToClipboard = (text: string, id: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleDeleteBook = async (book: Book) => {
+    if (deleteConfirmId !== book.id) {
+      setDeleteConfirmId(book.id);
+      setTimeout(() => setDeleteConfirmId(null), 3000);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/books/${book.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchBooks();
+        fetchDeletedBooks();
+        setDeleteConfirmId(null);
+      } else {
+        const data = await res.json();
+        console.error('Failed to delete book:', data);
+      }
+    } catch (error) {
+      console.error('Error deleting book:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleRestoreBook = async (id: number) => {
+    if (restoreConfirmId !== id) {
+      setRestoreConfirmId(id);
+      setTimeout(() => setRestoreConfirmId(null), 3000);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/books/${id}/restore`, { method: 'POST' });
+      if (res.ok) {
+        fetchBooks();
+        fetchDeletedBooks();
+        setRestoreConfirmId(null);
+      }
+    } catch (error) {
+      console.error('Error restoring book:', error);
+    }
+  };
+
+  const handlePermanentDeleteBook = async (id: number) => {
+    if (permDeleteConfirmId !== id) {
+      setPermDeleteConfirmId(id);
+      setTimeout(() => setPermDeleteConfirmId(null), 3000);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/books/${id}/permanent`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchDeletedBooks();
+        setPermDeleteConfirmId(null);
+      } else {
+        const data = await res.json();
+        console.error('Failed to permanently delete book:', data);
+      }
+    } catch (error) {
+      console.error('Error permanently deleting book:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleEditBook = (book: Book) => {
+    setEditingBookId(book.id);
+    setTitle(book.title);
+    setAuthor(book.author || '');
+    setCoverUrl(book.cover_url);
+    setPdfUrl(book.pdf_url || '');
+    // If category is "New book, Love Story", set primary category to "Love Story"
+    const categories = book.category?.split(', ') || [];
+    const primaryCategory = categories.length > 1 ? categories[1] : categories[0];
+    setCategory(primaryCategory || 'New book');
+    setDescription(book.description || '');
+    try {
+      const parsedPages = JSON.parse(book.content);
+      const loadedPages = Array.isArray(parsedPages) ? parsedPages : [book.content];
+      setPages(loadedPages.length > 0 ? loadedPages : ['']);
+    } catch (e) {
+      setPages(book.content ? [book.content] : ['']);
+    }
+    setImagePreview(book.cover_url);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const resetForm = () => {
+    setEditingBookId(null);
+    setTitle('');
+    setAuthor('');
+    setCoverUrl('');
+    setPdfUrl('');
+    setCategory('New book');
+    setDescription('');
+    setPages(['']);
+    setBulkText('');
+    setShowBulkImport(false);
+    setImagePreview(null);
+    setShowForm(false);
+  };
+
+  const handleBulkImport = () => {
+    if (!bulkText.trim()) return;
+    
+    // Standardize markers to a single delimiter
+    const delimiter = "---PAGE_BREAK---";
+    let processedText = bulkText;
+
+    // 1. Handle specific word markers: Page X, পৃষ্ঠা X, সূত্র X (supporting both English and Bengali digits)
+    const wordMarkers = [
+      /Page\s*(\d+|[০-৯]+)/gi, 
+      /\[Page\s*(\d+|[০-৯]+)\]/gi, 
+      /পৃষ্ঠা\s*(\d+|[০-৯]+)/gi, 
+      /সূত্র\s*(\d+|[০-৯]+)/gi
+    ];
+    
+    wordMarkers.forEach(marker => {
+      processedText = processedText.replace(marker, delimiter);
+    });
+
+    // 2. Handle standalone numbers on their own line (e.g., "1", "১", "2", "২" at start of line)
+    // Supporting both English (0-9) and Bengali (০-৯) digits
+    const standaloneNumberMarker = /^\s*(\d+|[০-৯]+)\s*$/gm;
+    processedText = processedText.replace(standaloneNumberMarker, delimiter);
+
+    const splitPages = processedText
+      .split(delimiter)
+      .map(p => p.trim())
+      .filter(p => p !== '');
+
+    if (splitPages.length > 0) {
+      setPages(splitPages);
+      setShowBulkImport(false);
+      showToast(`${splitPages.length} টি পৃষ্ঠা সফলভাবে তৈরি করা হয়েছে!`);
+    } else {
+      showToast('কোন পৃষ্ঠা পাওয়া যায়নি। অনুগ্রহ করে পৃষ্ঠা নম্বর (১, ২, ৩...) বা মার্কার ব্যবহার করুন।', 'error');
+    }
+  };
+
+  const filteredUsers = users.filter(u => {
+    const query = userSearch.toLowerCase().trim();
+    const username = (u.username || "").toLowerCase();
+    const fullName = (u.fullName || "").toLowerCase();
+    const email = (u.email || "").toLowerCase();
+    const deviceId = (u.device_id || "").toLowerCase();
+    
+    const matchesSearch = username.includes(query) || fullName.includes(query) || email.includes(query) || deviceId.includes(query);
+    
+    if (!matchesSearch) return false;
+    
+    if (userStatusFilter === 'all') return true;
+    if (userStatusFilter === 'online') {
+      if (!u.last_active_at) return false;
+      const lastActive = new Date(u.last_active_at);
+      const now = new Date();
+      const diffMinutes = (now.getTime() - lastActive.getTime()) / (1000 * 60);
+      return diffMinutes < 5; // Online if active in last 5 mins
+    }
+    if (userStatusFilter === 'offline') {
+      if (!u.last_active_at) return true;
+      const lastActive = new Date(u.last_active_at);
+      const now = new Date();
+      const diffMinutes = (now.getTime() - lastActive.getTime()) / (1000 * 60);
+      return diffMinutes >= 5; // Offline if not active in last 5 mins
+    }
+    if (userStatusFilter === 'expired') {
+      if (!u.trialEndsAt) return false;
+      return new Date() > new Date(u.trialEndsAt);
+    }
+    return u.status === userStatusFilter;
+  });
+
+  const filteredReferrals = referrals.filter(r => {
+    const query = referralSearch.toLowerCase();
+    const referrer = (r.referrer_username || "").toLowerCase();
+    const referee = (r.referee_username || "").toLowerCase();
+    return referrer.includes(query) || referee.includes(query);
+  });
+
+  const filteredBooks = books.filter(b => 
+    b.title.toLowerCase().includes(bookSearch.toLowerCase()) || 
+    (b.author || "").toLowerCase().includes(bookSearch.toLowerCase())
+  );
+  const filteredDeletedBooks = deletedBooks.filter(b => b.title.toLowerCase().includes(recycleSearch.toLowerCase()));
+
+  return (
+    <div className="min-h-screen bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 pb-20">
+      <header className="bg-white dark:bg-zinc-900 border-b border-black/5 dark:border-white/5 p-3 sticky top-0 z-50 backdrop-blur-md bg-opacity-80">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button onClick={() => navigate('/')} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
+              <ArrowLeft size={18} />
+            </button>
+            <h1 className="text-lg font-black tracking-tight">Admin Panel</h1>
+          </div>
+          <div className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest">
+            RJ Jisan Access
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto p-3 md:p-6 space-y-6">
+        {/* Tabs */}
+        <div className="flex gap-2 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-black/5 dark:border-white/5 shadow-sm overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('books')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'books' ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400'}`}
+          >
+            Books
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400'}`}
+          >
+            Users
+          </button>
+          <button
+            onClick={() => setActiveTab('recycle')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'recycle' ? 'bg-red-600 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Recycle Bin
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'settings' ? 'bg-amber-500 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Settings
+          </button>
+          <button
+            onClick={() => setActiveTab('referrals')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'referrals' ? 'bg-emerald-600 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Referrals
+          </button>
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'notifications' ? 'bg-indigo-600 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Notifications
+          </button>
+          <button
+            onClick={() => setActiveTab('categories')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'categories' ? 'bg-blue-600 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Categories
+          </button>
+          <button
+            onClick={() => setActiveTab('subscriptions')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'subscriptions' ? 'bg-rose-600 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Subscriptions
+          </button>
+          <button
+            onClick={() => setActiveTab('support')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'support' ? 'bg-rose-500 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Support
+          </button>
+        </div>
+
+        {activeTab === 'books' ? (
+          <div className="space-y-6">
+            {/* Book List with Search */}
+            <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden">
+              <div className="p-4 border-b border-black/5 dark:border-white/5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-black tracking-tight">বই তালিকা (Books)</h2>
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{books.length} Books</span>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                  <input
+                    type="text"
+                    placeholder="বই খুঁজুন..."
+                    value={bookSearch}
+                    onChange={(e) => setBookSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="divide-y divide-black/5 dark:divide-white/5 max-h-[500px] overflow-y-auto">
+                {filteredBooks.map(book => (
+                  <div key={book.id} className="p-3 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <img src={book.cover_url} className="w-10 h-14 object-cover rounded-lg shadow-sm" alt="" />
+                        <div className="absolute -top-2 -left-2 w-5 h-5 bg-blue-600 text-white text-[8px] font-black rounded-full flex items-center justify-center shadow-md border border-white dark:border-zinc-900">
+                          {book.sort_index || 0}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-black text-sm line-clamp-1">{book.title}</div>
+                        <div className="text-[10px] text-zinc-500 font-bold">{book.author || "অজানা লেখক"}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[9px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">সিরিয়াল: {book.sort_index || 0}</span>
+                          {book.category?.split(', ').map(cat => (
+                            <span key={cat} className="text-[9px] bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">{cat}</span>
+                          ))}
+                          <span className="text-[8px] text-zinc-400 uppercase tracking-widest">Added on {new Date(book.created_at!).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => {
+                          setEditingOrderBookId(book.id);
+                          setNewOrderIndex(book.sort_index || 0);
+                        }} 
+                        className="p-2 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                        title="সিরিয়াল সেট করুন"
+                      >
+                        <ArrowUpNarrowWide size={16} />
+                      </button>
+                      <button onClick={() => handleEditBook(book)} className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors" title="এডিট করুন">
+                        <Edit2 size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteBook(book)} 
+                        disabled={isDeleting}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg transition-all border font-black uppercase tracking-tighter text-[10px] ${
+                          deleteConfirmId === book.id 
+                            ? 'bg-red-600 text-white border-red-600 animate-pulse' 
+                            : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 border-red-100 dark:border-red-900/20'
+                        }`}
+                        title={deleteConfirmId === book.id ? "নিশ্চিত করুন" : "মুছে ফেলুন"}
+                      >
+                        <Trash2 size={14} />
+                        <span>{deleteConfirmId === book.id ? "নিশ্চিত?" : "ডিলিট"}</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {filteredBooks.length === 0 && (
+                  <div className="p-8 text-center text-zinc-400 text-xs font-bold">কোন বই পাওয়া যায়নি</div>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : activeTab === 'users' ? (
+          /* User Management Section */
+          <>
+            <div className="flex flex-col min-h-[calc(100vh-200px)]">
+              <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden flex-1 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="p-4 border-b border-black/5 dark:border-white/5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-black tracking-tight">ইউজার ম্যানেজমেন্ট</h2>
+                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{users.length} Users</span>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                    <input
+                      type="text"
+                      placeholder="সার্চ নাম বা ডিভাইস আইডি..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full pl-12 pr-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all"
+                    />
+                  </div>
+                  
+                  {/* User Status Filter */}
+                  <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                    {[
+                      { id: 'all', label: 'সব ইউজার', count: users.length, color: 'bg-zinc-500' },
+                      { id: 'online', label: 'অনলাইন', count: users.filter(u => u.last_active_at && (new Date().getTime() - new Date(u.last_active_at).getTime() < 300000)).length, color: 'bg-emerald-500' },
+                      { id: 'offline', label: 'অফলাইন', count: users.filter(u => !u.last_active_at || (new Date().getTime() - new Date(u.last_active_at).getTime() >= 300000)).length, color: 'bg-zinc-400' },
+                      { id: 'expired', label: 'মেয়াদ শেষ', count: users.filter(u => u.trialEndsAt && new Date() > new Date(u.trialEndsAt)).length, color: 'bg-orange-500' },
+                      { id: 'pending', label: 'পেন্ডিং', count: users.filter(u => u.status === 'pending').length, color: 'bg-amber-500' },
+                      { id: 'active', label: 'একটিভ', count: users.filter(u => u.status === 'active').length, color: 'bg-blue-500' },
+                      { id: 'blocked', label: 'ব্লক করা', count: users.filter(u => u.status === 'blocked').length, color: 'bg-red-500' }
+                    ].map(filter => (
+                      <button
+                        key={filter.id}
+                        onClick={() => setUserStatusFilter(filter.id as any)}
+                        className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex items-center gap-2 ${
+                          userStatusFilter === filter.id 
+                          ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md scale-105' 
+                          : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-black/5 dark:border-white/5'
+                        }`}
+                      >
+                        <div className={`w-2 h-2 rounded-full ${filter.color}`}></div>
+                        {filter.label}
+                        <span className={`px-1.5 py-0.5 rounded-full text-[8px] ${
+                          userStatusFilter === filter.id 
+                          ? 'bg-white/20 text-white' 
+                          : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-400'
+                        }`}>
+                          {filter.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {filteredUsers.map(user => {
+                    const isExpanded = expandedUserId === user.id;
+                    const regDate = user.created_at 
+                      ? new Intl.DateTimeFormat('en-GB', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: '2-digit'
+                        }).format(new Date(user.created_at))
+                      : "N/A";
+
+                    return (
+                      <div key={user.id} className="bg-white dark:bg-zinc-800 rounded-2xl shadow-md border border-black/5 dark:border-white/5 overflow-hidden transition-all hover:shadow-lg">
+                        <div 
+                          className="p-4 flex items-center justify-between cursor-pointer"
+                          onClick={() => setExpandedUserId(isExpanded ? null : user.id)}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-zinc-100 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800">
+                                <img 
+                                  src={user.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`} 
+                                  alt="" 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                              {/* Online Status Indicator */}
+                              {user.last_active_at && (new Date().getTime() - new Date(user.last_active_at).getTime() < 300000) && (
+                                <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-zinc-800 rounded-full shadow-sm"></div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <div className="font-black text-lg tracking-tight text-zinc-900 dark:text-white leading-tight">
+                                  {user.fullName || user.username}
+                                </div>
+                                {user.last_active_at && (new Date().getTime() - new Date(user.last_active_at).getTime() < 300000) && (
+                                  <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">Active Now</span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-zinc-500 font-bold">{user.email || "No email set"}</div>
+                              {user.last_active_at && (
+                                <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">
+                                  Last Active: {new Date(user.last_active_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                                </div>
+                              )}
+                              <div className="text-[10px] text-zinc-400">Joined: {regDate}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${user.status === 'active' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                              {user.status}
+                            </div>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteUser(user.id);
+                              }}
+                              className={`p-2 rounded-xl transition-all ${
+                                userDeleteConfirmId === user.id 
+                                  ? 'bg-red-600 text-white animate-pulse' 
+                                  : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                              }`}
+                              title={userDeleteConfirmId === user.id ? "নিশ্চিত করুন" : "ইউজার ডিলিট করুন"}
+                            >
+                              <Trash size={18} />
+                            </button>
+                            {isExpanded ? <ChevronUp size={20} className="text-zinc-400" /> : <ChevronDown size={20} className="text-zinc-400" />}
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="p-4 pt-0 border-t border-black/5 dark:border-white/5 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="py-4 space-y-4">
+                              {/* Password Row */}
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-sm">পাসওয়ার্ড: </span>
+                                  <span className="text-blue-600 dark:text-blue-400 font-bold text-lg">{user.password || "N/A"}</span>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setEditingPasswordUserId(user.id);
+                                    setNewPassword(user.password || '');
+                                  }}
+                                  className="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-xl transition-colors"
+                                >
+                                  <Edit2 size={18} />
+                                </button>
+                              </div>
+                              
+                              <hr className="border-black/5 dark:border-white/5" />
+
+                              {/* Trial Expiry Row */}
+                              <div className="flex items-center justify-between">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-0.5">Trial Expiry</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-sm font-black ${new Date(user.trialEndsAt) < new Date() ? 'text-red-500' : 'text-emerald-500'}`}>
+                                      {new Date(user.trialEndsAt).toLocaleDateString('en-GB')}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-400">
+                                      ({Math.ceil((new Date(user.trialEndsAt).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))} days left)
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setEditingTrialUserId(user.id);
+                                    // Format for datetime-local input: YYYY-MM-DDTHH:mm
+                                    const date = new Date(user.trialEndsAt);
+                                    const formattedDate = date.toISOString().slice(0, 16);
+                                    setNewTrialDate(formattedDate);
+                                  }}
+                                  className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-colors"
+                                >
+                                  <Edit3 size={18} />
+                                </button>
+                              </div>
+
+                              {editingTrialUserId === user.id && (
+                                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 space-y-3 animate-in slide-in-from-top-2">
+                                  <div className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">নতুন মেয়াদ সেট করুন</div>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="datetime-local"
+                                      value={newTrialDate}
+                                      onChange={(e) => setNewTrialDate(e.target.value)}
+                                      className="flex-1 px-4 py-2 rounded-xl bg-white dark:bg-zinc-800 border-none text-sm outline-none ring-1 ring-indigo-200 dark:ring-indigo-900/50"
+                                    />
+                                    <button
+                                      onClick={() => handleUpdateTrial(user.id)}
+                                      className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-colors"
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        const oneYearFromNow = new Date();
+                                        oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+                                        const isoDate = oneYearFromNow.toISOString();
+                                        try {
+                                          const res = await fetch('/api/admin/users/trial', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ userId: user.id, trialEndsAt: isoDate }),
+                                          });
+                                          if (res.ok) {
+                                            setEditingTrialUserId(null);
+                                            fetchUsers();
+                                          }
+                                        } catch (error) {
+                                          console.error('Error auto-updating trial:', error);
+                                        }
+                                      }}
+                                      className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-colors"
+                                    >
+                                      Auto (1 Year)
+                                    </button>
+                                    <button
+                                      onClick={() => setEditingTrialUserId(null)}
+                                      className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-zinc-300 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              <hr className="border-black/5 dark:border-white/5" />
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-zinc-50 dark:bg-zinc-900/50 p-3 rounded-xl border border-black/5 dark:border-white/5">
+                                  <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Last Login</div>
+                                  <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                    {user.last_login_at ? new Date(user.last_login_at).toLocaleString('en-GB') : 'Never'}
+                                  </div>
+                                </div>
+                                <div className="bg-zinc-50 dark:bg-zinc-900/50 p-3 rounded-xl border border-black/5 dark:border-white/5">
+                                  <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Last Active</div>
+                                  <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                    {user.last_active_at ? new Date(user.last_active_at).toLocaleString('en-GB') : 'Never'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <hr className="border-black/5 dark:border-white/5" />
+
+                              {/* Location Row */}
+                              <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-900/50 p-3 rounded-xl border border-black/5 dark:border-white/5">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600">
+                                    <MapPin size={16} />
+                                  </div>
+                                  <div>
+                                    <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-0.5">User Location</div>
+                                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                      {user.latitude && user.longitude 
+                                        ? `${user.latitude.toFixed(4)}, ${user.longitude.toFixed(4)}`
+                                        : 'Location not available'}
+                                    </div>
+                                  </div>
+                                </div>
+                                {user.latitude && user.longitude && (
+                                  <a 
+                                    href={`https://www.google.com/maps?q=${user.latitude},${user.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1.5 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-md shadow-emerald-500/20 hover:scale-105 transition-transform"
+                                  >
+                                    View Map
+                                  </a>
+                                )}
+                              </div>
+
+                              <hr className="border-black/5 dark:border-white/5" />
+
+                              {/* Device ID Row */}
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[10px] text-zinc-600 dark:text-zinc-400 truncate">Device ID: {user.device_id || "No ID"}</div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    if (user.device_id) {
+                                      navigator.clipboard.writeText(user.device_id);
+                                      showToast('ID কপি হয়েছে!');
+                                    }
+                                  }}
+                                  className="p-2 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-xl transition-colors"
+                                >
+                                  <Copy size={16} />
+                                </button>
+                              </div>
+
+                              <hr className="border-black/5 dark:border-white/5" />
+                              
+                              {/* User Notes Section */}
+                              <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/20">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <Edit3 size={14} className="text-amber-600" />
+                                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">User Notepad</span>
+                                  </div>
+                                  <button 
+                                    onClick={() => fetchUserNotes(user.id)}
+                                    className="text-[10px] font-black text-amber-600 uppercase tracking-widest hover:underline"
+                                  >
+                                    View All ({user.notes_count || 0})
+                                  </button>
+                                </div>
+                                <div className="text-xs text-zinc-700 dark:text-zinc-300 font-medium leading-relaxed whitespace-pre-wrap italic line-clamp-2">
+                                  {user.notes || "ইউজার এখনো কোনো নোট লিখেননি।"}
+                                </div>
+                              </div>
+
+                              <hr className="border-black/5 dark:border-white/5" />
+                              
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-sm font-medium">Status: </span>
+                                  <button
+                                    onClick={() => handleUserStatus(user.id, user.status === 'active' ? 'blocked' : 'active')}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                                      user.status === 'active' ? 'bg-green-500' : 'bg-red-500'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                        user.status === 'active' ? 'translate-x-6' : 'translate-x-1'
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+
+                                <button
+                                  onClick={() => setSelectedUser(user)}
+                                  className="px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
+                                >
+                                  View Full Detail
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    handleConfirm(`আপনি কি নিশ্চিতভাবে ${user.username} অ্যাকাউন্টটি ডিলিট করতে চান?`, () => {
+                                      handleDeleteUser(user.id);
+                                    });
+                                  }}
+                                  className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                                >
+                                  <Trash size={24} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {filteredUsers.length === 0 && (
+                    <div className="py-12 text-center text-zinc-400 text-sm font-bold">কোনো ইউজার পাওয়া যায়নি!</div>
+                  )}
+                </div>
+
+                {/* Footer Branding inside Section */}
+                <div className="bg-zinc-100 dark:bg-zinc-800/50 py-3 text-center">
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                    DEVELOPED BY RJ JISAN | FORUM JESSORE JHIKARGACHA
+                  </p>
+                </div>
+              </section>
+            </div>
+          </>
+        ) : activeTab === 'categories' ? (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden">
+              <div className="p-6 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-xl text-blue-600">
+                    <List size={20} />
+                  </div>
+                  <h2 className="text-lg font-black tracking-tight">ক্যাটাগরি ম্যানেজমেন্ট</h2>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Lock All</span>
+                  <button
+                    onClick={() => handleToggleLockAll(!lockAllCategories)}
+                    className={`w-12 h-6 rounded-full transition-all relative ${lockAllCategories ? 'bg-red-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${lockAllCategories ? 'right-1' : 'left-1'}`} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 bg-zinc-50 dark:bg-zinc-800/30">
+                <form onSubmit={handleAddCategory} className="flex gap-3">
+                  <input
+                    type="text"
+                    placeholder="নতুন ক্যাটাগরির নাম..."
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    className="flex-1 px-4 py-3 rounded-xl bg-white dark:bg-zinc-900 border border-black/5 dark:border-white/5 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isAddingCategory}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-blue-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                  >
+                    {isAddingCategory ? 'যোগ হচ্ছে...' : 'অ্যাড করুন'}
+                  </button>
+                </form>
+              </div>
+
+              <div className="divide-y divide-black/5 dark:divide-white/5">
+                <div className="p-4 bg-zinc-100/50 dark:bg-zinc-800/50">
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                    <input
+                      type="text"
+                      placeholder="ক্যাটাগরি সার্চ করুন..."
+                      value={categorySearch}
+                      onChange={(e) => setCategorySearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border-none text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {categories.filter(c => c.name.toLowerCase().includes(categorySearch.toLowerCase())).map(cat => (
+                  <div key={cat.id} className="p-4 flex flex-col gap-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="text-xs font-black text-zinc-400 w-4">{cat.sort_index}</div>
+                        {editingCategoryId === cat.id ? (
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-zinc-400 uppercase w-12">Serial:</span>
+                              <input
+                                type="number"
+                                value={editCategorySortIndex}
+                                onChange={(e) => setEditCategorySortIndex(parseInt(e.target.value) || 0)}
+                                className="w-16 px-2 py-1 rounded bg-white dark:bg-zinc-900 border border-blue-500 text-sm outline-none"
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              value={editCategoryName}
+                              onChange={(e) => setEditCategoryName(e.target.value)}
+                              className="px-2 py-1 rounded bg-white dark:bg-zinc-900 border border-blue-500 text-sm outline-none"
+                              placeholder="Category Name"
+                            />
+                            <input
+                              type="text"
+                              value={editCategoryPassword}
+                              onChange={(e) => setEditCategoryPassword(e.target.value)}
+                              className="px-2 py-1 rounded bg-white dark:bg-zinc-900 border border-blue-500 text-sm outline-none"
+                              placeholder="Password (optional)"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleUpdateCategory(cat.id, { name: editCategoryName, password: editCategoryPassword, sort_index: editCategorySortIndex })}
+                                className="px-3 py-1 bg-blue-600 text-white text-[10px] font-black uppercase rounded-lg"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingCategoryId(null)}
+                                className="px-3 py-1 bg-zinc-200 dark:bg-zinc-800 text-[10px] font-black uppercase rounded-lg"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm">{cat.name}</span>
+                            {cat.is_locked && (
+                              <div className="flex items-center gap-1">
+                                <Lock size={12} className="text-red-500" />
+                                {cat.password && <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">PW Set</span>}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleUpdateCategory(cat.id, { is_locked: !cat.is_locked })}
+                          className={`p-2 rounded-lg transition-colors ${cat.is_locked ? 'text-red-500 bg-red-50 dark:bg-red-900/20' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                          title={cat.is_locked ? "আনলক করুন" : "লক করুন"}
+                        >
+                          {cat.is_locked ? <Lock size={16} /> : <Unlock size={16} />}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingCategoryId(cat.id);
+                            setEditCategoryName(cat.name);
+                            setEditCategoryPassword(cat.password || '');
+                            setEditCategorySortIndex(cat.sort_index);
+                          }}
+                          className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCategory(cat.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : activeTab === 'subscriptions' ? (
+          /* Subscriptions Management Section */
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden">
+              <div className="p-6 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-rose-100 dark:bg-rose-900/20 rounded-xl text-rose-600">
+                    <History size={20} />
+                  </div>
+                  <h2 className="text-lg font-black tracking-tight">সাবস্ক্রিপশন ম্যানেজমেন্ট</h2>
+                </div>
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{subscriptions.length} Requests</span>
+              </div>
+
+              <div className="divide-y divide-black/5 dark:divide-white/5">
+                {subscriptions.length === 0 && (
+                  <div className="p-12 text-center">
+                    <History size={48} className="mx-auto text-zinc-200 mb-4" />
+                    <p className="text-zinc-400 font-bold">কোন সাবস্ক্রিপশন রিকোয়েস্ট পাওয়া যায়নি</p>
+                  </div>
+                )}
+                {subscriptions.map(sub => (
+                  <div key={sub.id} className="p-6 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-sm">{sub.full_name || sub.username}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                            sub.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
+                            sub.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                            'bg-amber-100 text-amber-600'
+                          }`}>
+                            {sub.status}
+                          </span>
+                        </div>
+                        <div className="text-xs text-zinc-500 font-bold">Amount: {sub.amount} TK</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-2">
+                          <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Sender Info (Last Digit): <span className="text-zinc-900 dark:text-white">{sub.bkash_number}</span></div>
+                          <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Transaction ID: <span className="text-zinc-900 dark:text-white">{sub.transaction_id}</span></div>
+                        </div>
+                        <div className="text-[9px] text-zinc-400 mt-1">
+                          Requested: {new Date(sub.created_at).toLocaleString('en-GB')}
+                        </div>
+                      </div>
+
+                      {sub.status === 'pending' && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleApproveSubscription(sub.id, sub.user_id)}
+                            className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleRejectSubscription(sub.id, sub.user_id)}
+                            className="flex-1 md:flex-none px-4 py-2 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : activeTab === 'notifications' ? (
+          /* Notifications Section */
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 rounded-xl">
+                  <Bell size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black tracking-tight">নতুন নোটিফিকেশন পাঠান</h2>
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Send Push Notifications to Users</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSendNotification} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Notification Title</label>
+                    <input
+                      type="text"
+                      value={notifTitle}
+                      onChange={(e) => setNotifTitle(e.target.value)}
+                      placeholder="শিরোনাম (যেমন: নতুন বই এসেছে!)"
+                      className="w-full p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Type</label>
+                    <select
+                      value={notifType}
+                      onChange={(e) => setNotifType(e.target.value)}
+                      className="w-full p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
+                    >
+                      <option value="info">Info (Blue)</option>
+                      <option value="success">Success (Green)</option>
+                      <option value="warning">Warning (Yellow)</option>
+                      <option value="error">Error (Red)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Target User (Optional)</label>
+                    <select
+                      value={notifUserId || ''}
+                      onChange={(e) => setNotifUserId(e.target.value ? parseInt(e.target.value) : null)}
+                      className="w-full p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
+                    >
+                      <option value="">All Users (Global)</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.fullName || u.username} ({u.username})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Message Content</label>
+                  <textarea
+                    value={notifMessage}
+                    onChange={(e) => setNotifMessage(e.target.value)}
+                    rows={4}
+                    placeholder="আপনার মেসেজটি এখানে লিখুন..."
+                    className="w-full p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSendingNotif}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                >
+                  {isSendingNotif ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <Send size={20} />
+                  )}
+                  {isSendingNotif ? 'Sending...' : 'Send Notification'}
+                </button>
+              </form>
+            </section>
+
+            <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden">
+              <div className="p-4 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+                <h2 className="text-lg font-black tracking-tight">আগের নোটিফিকেশনসমূহ</h2>
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{notifications.length} Sent</span>
+              </div>
+              <div className="divide-y divide-black/5 dark:divide-white/5 max-h-[400px] overflow-y-auto">
+                {notifications.map(notif => (
+                  <AdminNotificationItem key={notif.id} notif={notif} onDelete={handleDeleteNotification} />
+                ))}
+                {notifications.length === 0 && (
+                  <div className="p-12 text-center text-zinc-400 text-sm font-bold">কোনো নোটিফিকেশন পাঠানো হয়নি</div>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : activeTab === 'support' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[700px] animate-in fade-in slide-in-from-bottom-4 duration-300">
+            {/* User List */}
+            <section className="lg:col-span-1 bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-black/5 dark:border-white/5 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/20">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-rose-100 dark:bg-rose-900/20 rounded-xl text-rose-600">
+                    <MessageSquare size={20} />
+                  </div>
+                  <h2 className="text-lg font-black tracking-tight">সাপোর্ট চ্যাট</h2>
+                </div>
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{supportMessages.length} Users</span>
+              </div>
+
+              <div className="flex-1 overflow-y-auto divide-y divide-black/5 dark:divide-white/5">
+                {supportMessages.map(user => (
+                  <button
+                    key={user.user_id}
+                    onClick={() => {
+                      setSelectedChatUser({ user_id: user.user_id, username: user.username });
+                      fetchChatMessages(user.user_id);
+                    }}
+                    className={`w-full p-5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-all flex items-center gap-4 relative ${selectedChatUser?.user_id === user.user_id ? 'bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''}`}
+                  >
+                    <div className="relative">
+                      <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 rounded-2xl flex items-center justify-center text-zinc-500 font-black text-lg shadow-sm">
+                        {user.username?.[0]?.toUpperCase() || 'G'}
+                      </div>
+                      {user.unread_count > 0 && (
+                        <div className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900 animate-bounce">
+                          {user.unread_count}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-black text-sm truncate">{user.username}</span>
+                        <span className="text-[8px] font-bold text-zinc-400 uppercase">
+                          {new Date(user.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate font-medium">
+                        {user.last_message}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+                {supportMessages.length === 0 && (
+                  <div className="py-20 text-center space-y-4 opacity-50">
+                    <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto text-zinc-400">
+                      <MessageSquare size={32} />
+                    </div>
+                    <p className="text-zinc-400 text-sm font-bold">কোনো চ্যাট নেই!</p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Chat Window */}
+            <section className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden flex flex-col">
+              {selectedChatUser ? (
+                <>
+                  {/* Chat Header */}
+                  <div className="p-6 border-b border-black/5 dark:border-white/5 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/20">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/20 rounded-xl flex items-center justify-center text-rose-600 font-black">
+                        {selectedChatUser.username?.[0]?.toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="font-black text-sm">{selectedChatUser.username}</h3>
+                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Online Support Session</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteChat(selectedChatUser.user_id)}
+                      className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"
+                      title="Delete entire chat"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  </div>
+
+                  {/* Chat Messages */}
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-zinc-50/30 dark:bg-zinc-950/10">
+                    {chatMessages.map(msg => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${msg.sender_role === 'admin' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`max-w-[80%] space-y-1`}>
+                          <div className={`flex items-center gap-1.5 mb-1 ${msg.sender_role === 'admin' ? 'flex-row-reverse' : 'flex-row'}`}>
+                            <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400">
+                              {msg.sender_role === 'admin' ? 'You' : msg.username}
+                            </span>
+                          </div>
+                          <div
+                            className={`p-4 rounded-2xl text-sm font-medium shadow-sm ${
+                              msg.sender_role === 'admin'
+                                ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-tr-none'
+                                : 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-tl-none border border-black/5 dark:border-white/5'
+                            }`}
+                          >
+                            {msg.message}
+                          </div>
+                          <p className={`text-[8px] font-bold text-zinc-400 ${msg.sender_role === 'admin' ? 'text-right' : 'text-left'}`}>
+                            {new Date(msg.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {/* Chat Input */}
+                  <div className="p-6 border-t border-black/5 dark:border-white/5 bg-white dark:bg-zinc-900">
+                    <form onSubmit={handleSendReply} className="relative">
+                      <textarea
+                        required
+                        value={replyMessage}
+                        onChange={(e) => setReplyMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendReply(e);
+                          }
+                        }}
+                        placeholder="রিপ্লাই লিখুন..."
+                        className="w-full pl-5 pr-14 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-rose-500 transition-all font-medium resize-none h-14"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSendingReply || !replyMessage.trim()}
+                        className="absolute right-2 top-2 bottom-2 w-10 bg-rose-500 text-white rounded-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-rose-500/20"
+                      >
+                        {isSendingReply ? (
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <Send size={16} />
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-12 space-y-6 opacity-30">
+                  <div className="w-24 h-24 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center text-zinc-400">
+                    <MessageSquare size={48} />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-black">চ্যাট সিলেক্ট করুন</h3>
+                    <p className="text-sm font-bold max-w-xs mx-auto">বাম পাশের লিস্ট থেকে কোনো ইউজারের চ্যাট সিলেক্ট করে রিপ্লাই দিন।</p>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        ) : activeTab === 'settings' ? (
+          /* Settings Section */
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="p-6 space-y-8">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-black tracking-tight leading-tight">হোম পেজ লেখা ও সাইজ</h2>
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Home Page Motivation & Font Control</p>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Auth Page Motivational Text</label>
+                  <textarea
+                    value={authText}
+                    onChange={(e) => setAuthText(e.target.value)}
+                    rows={10}
+                    placeholder="লগইন পেজের মোটিভেশনাল লেখা এখানে লিখুন..."
+                    className="w-full p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all resize-none font-medium"
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Home Page Motivational Text</label>
+                  <textarea
+                    value={homeText}
+                    onChange={(e) => setHomeText(e.target.value)}
+                    rows={6}
+                    placeholder="মোটিভেশনাল লেখা এখানে লিখুন..."
+                    className="w-full p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all resize-none font-medium"
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">ফন্ট সাইজ: {homeFontSize}</label>
+                    <span className="text-[10px] font-black text-zinc-400">Range: 12 - 30</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="12"
+                    max="30"
+                    step="1"
+                    value={homeFontSize}
+                    onChange={(e) => setHomeFontSize(parseInt(e.target.value))}
+                    className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-zinc-900 dark:accent-white"
+                  />
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    onClick={handleUpdateSettings}
+                    className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all"
+                  >
+                    <Save size={20} />
+                    আপডেট করুন
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : (
+          /* Recycle Bin Section */
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden">
+            <div className="p-4 border-b border-black/5 dark:border-white/5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Trash2 className="text-red-500" size={20} />
+                  <h2 className="text-lg font-black tracking-tight">রিসাইকেল বিন (Recycle Bin)</h2>
+                </div>
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{deletedBooks.length} Deleted</span>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="মুছে ফেলা বই খুঁজুন..."
+                  value={recycleSearch}
+                  onChange={(e) => setRecycleSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="divide-y divide-black/5 dark:divide-white/5 max-h-[500px] overflow-y-auto">
+              {filteredDeletedBooks.map(book => (
+                <div key={book.id} className="p-3 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <img src={book.cover_url} className="w-10 h-14 object-cover rounded-lg shadow-sm grayscale" alt="" />
+                    <div>
+                      <div className="font-black text-sm line-clamp-1 text-zinc-400">{book.title}</div>
+                      <div className="text-[8px] text-zinc-400 uppercase tracking-widest italic">Deleted Item</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleRestoreBook(book.id)}
+                      className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                        restoreConfirmId === book.id 
+                          ? 'bg-emerald-600 text-white animate-pulse' 
+                          : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                      }`}
+                    >
+                      {restoreConfirmId === book.id ? "Confirm?" : "Restore"}
+                    </button>
+                    <button
+                      onClick={() => handlePermanentDeleteBook(book.id)}
+                      disabled={isDeleting}
+                      className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                        permDeleteConfirmId === book.id 
+                          ? 'bg-red-700 text-white animate-pulse' 
+                          : 'bg-red-600 text-white hover:bg-red-700'
+                      }`}
+                    >
+                      {permDeleteConfirmId === book.id ? "Sure?" : "Delete Forever"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {filteredDeletedBooks.length === 0 && (
+                <div className="p-8 text-center text-zinc-400 text-xs font-bold">রিসাইকেল বিন খালি</div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'referrals' && (
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl overflow-hidden">
+            <div className="p-4 border-b border-black/5 dark:border-white/5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="text-emerald-500" size={20} />
+                  <h2 className="text-lg font-black tracking-tight">রেফারেল তালিকা (Referrals)</h2>
+                </div>
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{referrals.length} Referrals</span>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="রেফারার বা রেফার করা ইউজার খুঁজুন..."
+                  value={referralSearch}
+                  onChange={(e) => setReferralSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="divide-y divide-black/5 dark:divide-white/5 max-h-[500px] overflow-y-auto">
+              <div className="grid grid-cols-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                <div>Referrer (কে রেফার করেছে)</div>
+                <div>Referee (যাকে রেফার করেছে)</div>
+                <div>Date (তারিখ)</div>
+              </div>
+              {filteredReferrals.map((ref, idx) => (
+                <div key={idx} className="grid grid-cols-3 p-3 items-center hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors text-xs font-bold">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 text-[10px]">
+                      {ref.referrer_username[0].toUpperCase()}
+                    </div>
+                    <span>{ref.referrer_username}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 text-[10px]">
+                      {ref.referee_username[0].toUpperCase()}
+                    </div>
+                    <span>{ref.referee_username}</span>
+                  </div>
+                  <div className="text-zinc-400 text-[10px]">
+                    {new Date(ref.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+              ))}
+              {filteredReferrals.length === 0 && (
+                <div className="p-8 text-center text-zinc-400 text-xs font-bold">কোন রেফারেল পাওয়া যায়নি</div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Footer Branding */}
+        <footer className="py-8 text-center opacity-30 text-[8px] font-black tracking-[0.3em] uppercase">
+          DEVELOPED BY RJ JISAN | FORUM JESSORE JHIKARGACHA
+        </footer>
+
+        {/* User Notes Modal */}
+        <AnimatePresence>
+          {showNotesModal && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowNotesModal(false)}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-black/5 dark:border-white/5 overflow-hidden flex flex-col max-h-[80vh]"
+              >
+                <div className="p-8 border-b border-black/5 dark:border-white/5 flex items-center justify-between bg-amber-50/30 dark:bg-amber-900/5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-amber-500 text-white rounded-xl">
+                      <Edit3 size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black tracking-tight">User Notes</h3>
+                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Viewing all notes for this user</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowNotesModal(false)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8">
+                  {loadingNotes ? (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4" />
+                      <p className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Loading Notes...</p>
+                    </div>
+                  ) : userNotes.length === 0 ? (
+                    <div className="text-center py-12">
+                      <FileText size={48} className="mx-auto text-zinc-200 mb-4" />
+                      <p className="text-zinc-400 font-bold">No notes found for this user.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {userNotes.map((note) => (
+                        <div key={note.id} className="p-6 bg-zinc-50 dark:bg-zinc-800/50 rounded-3xl border border-black/5 dark:border-white/5">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-black text-lg">{note.title}</h4>
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                              {new Date(note.updated_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400 font-medium leading-relaxed whitespace-pre-wrap">
+                            {note.content}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* User Detail Modal */}
+        <AnimatePresence>
+          {selectedUser && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl border border-white/10 overflow-hidden relative"
+              >
+                <button 
+                  onClick={() => setSelectedUser(null)} 
+                  className="absolute top-6 right-6 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors z-10"
+                >
+                  <X size={24} />
+                </button>
+
+                <div className="text-center space-y-6">
+                  <div className="relative inline-block">
+                    <div className="w-32 h-32 rounded-full border-4 border-emerald-500/20 p-1 overflow-hidden mx-auto">
+                      <img 
+                        src={selectedUser.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser.username}`} 
+                        alt="" 
+                        className="w-full h-full object-cover rounded-full"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-4 border-white dark:border-zinc-900 ${selectedUser.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                  </div>
+
+                  <div>
+                    <h2 className="text-2xl font-black tracking-tight">{selectedUser.fullName || selectedUser.username}</h2>
+                    <p className="text-zinc-500 font-bold">@{selectedUser.username}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 text-left">
+                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Email Address</div>
+                      <div className="font-bold flex items-center gap-2">
+                        <Mail size={14} className="text-zinc-400" />
+                        {selectedUser.email || "Not provided"}
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Device Information</div>
+                      <div className="font-bold flex items-center gap-2">
+                        <Settings size={14} className="text-zinc-400" />
+                        <span className="truncate">{selectedUser.device_id || "Unknown Device"}</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/20">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[10px] font-black text-amber-600 uppercase tracking-widest">User Notepad</div>
+                        <button 
+                          onClick={() => {
+                            setSelectedUser(null);
+                            fetchUserNotes(selectedUser.id);
+                          }}
+                          className="text-[10px] font-black text-amber-600 uppercase tracking-widest hover:underline"
+                        >
+                          View All ({selectedUser.notes_count || 0})
+                        </button>
+                      </div>
+                      <div className="text-xs text-zinc-700 dark:text-zinc-300 font-medium leading-relaxed whitespace-pre-wrap italic line-clamp-3">
+                        {selectedUser.notes || "No notes written yet."}
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Account Stats</div>
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2 font-bold">
+                          <History size={14} className="text-zinc-400" />
+                          Books Read: {selectedUser.booksReadCount || 0}
+                        </div>
+                        <div className="text-[10px] font-black px-2 py-1 bg-zinc-200 dark:bg-zinc-700 rounded-lg uppercase">
+                          {selectedUser.role}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => setSelectedUser(null)}
+                    className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    Close Profile
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Floating Action Button for Adding Books */}
+        {activeTab === 'books' && !showForm && (
+          <motion.button
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => { resetForm(); setShowForm(true); }}
+            className="fixed bottom-24 right-6 w-16 h-16 bg-emerald-500 text-white rounded-full shadow-2xl flex items-center justify-center z-40"
+          >
+            <PlusCircle size={32} />
+          </motion.button>
+        )}
+
+        {/* Add/Edit Book Modal */}
+        {showForm && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
+            >
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white">
+                      {editingBookId ? <Edit2 size={20} /> : <PlusCircle size={20} />}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black tracking-tight">{editingBookId ? 'বই এডিট করুন' : 'নতুন বই যোগ করুন'}</h3>
+                      <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Book Management System</p>
+                    </div>
+                  </div>
+                  <button onClick={resetForm} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveBook} className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Step 1: Cover Image</div>
+                      <div className="aspect-[3/4] border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50 dark:bg-zinc-950/50 flex flex-col items-center justify-center cursor-pointer overflow-hidden relative group" onClick={() => fileInputRef.current?.click()}>
+                        <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+                        {imagePreview ? (
+                          <img src={imagePreview} className="w-full h-full object-cover" alt="Preview" />
+                        ) : (
+                          <div className="text-center p-4">
+                            <ImageIcon className="mx-auto text-zinc-300 mb-2" size={32} />
+                            <p className="text-[10px] font-bold text-zinc-400">গ্যালারি থেকে ফটো যোগ করুন</p>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <ImageIcon className="text-white" size={24} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Step 2: Book Details</div>
+                      <div className="space-y-4">
+                        <div className="relative">
+                          <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                          <input
+                            type="text"
+                            required
+                            placeholder="বইয়ের নাম"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                          />
+                        </div>
+                        <div className="relative">
+                          <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                          <input
+                            type="text"
+                            required
+                            placeholder="লেখকের নাম"
+                            value={author}
+                            onChange={(e) => setAuthor(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                          />
+                        </div>
+                        <div className="relative">
+                          <File className="absolute left-3 top-3 text-zinc-400" size={16} />
+                          <textarea
+                            placeholder="বই লেখক এর তথ্য (Description)"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            rows={4}
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                          />
+                        </div>
+                        <div className="relative">
+                          <File className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                          <input
+                            type="text"
+                            placeholder="ফাইল লিঙ্ক (ঐচ্ছিক)"
+                            value={pdfUrl}
+                            onChange={(e) => setPdfUrl(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                          />
+                        </div>
+                        <div className="relative">
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                          <select
+                            value={category}
+                            onChange={(e) => setCategory(e.target.value)}
+                            className="w-full pl-4 pr-10 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold appearance-none"
+                          >
+                            {categories.map(cat => (
+                              <option key={cat.id} value={cat.name}>{cat.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">বইয়ের পৃষ্ঠা সমূহ (Pages)</label>
+                            <div className="flex gap-2">
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  handleConfirm('আপনি কি সব পৃষ্ঠা মুছে ফেলতে চান?', () => {
+                                    setPages(['']);
+                                  });
+                                }}
+                                className="text-[10px] font-black uppercase tracking-widest text-red-600 flex items-center gap-1 hover:underline"
+                              >
+                                <Trash2 size={12} />
+                                সব মুছে ফেলুন
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setShowBulkImport(!showBulkImport)}
+                                className="text-[10px] font-black uppercase tracking-widest text-blue-600 flex items-center gap-1 hover:underline"
+                              >
+                                <FileText size={12} />
+                                একবারে সব যোগ করুন
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={() => setPages([...pages, ''])}
+                                className="text-[10px] font-black uppercase tracking-widest text-emerald-600 flex items-center gap-1 hover:underline"
+                              >
+                                <PlusCircle size={12} />
+                                নতুন পৃষ্ঠা যোগ করুন
+                              </button>
+                            </div>
+                          </div>
+
+                          {showBulkImport && (
+                            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-900/30 space-y-3 animate-in fade-in slide-in-from-top-2">
+                              <div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">Bulk Import Mode</div>
+                              <p className="text-[10px] text-zinc-500 font-medium">
+                                এখানে পুরো বইয়ের লেখা পেস্ট করুন। পৃষ্ঠা আলাদা করতে লেখার মাঝে শুধু সংখ্যা (যেমন: <b>১</b>, <b>২</b>) অথবা <b>Page 1</b>, <b>পৃষ্ঠা ১</b> লিখে দিন।
+                              </p>
+                              <textarea
+                                rows={8}
+                                value={bulkText}
+                                onChange={(e) => setBulkText(e.target.value)}
+                                placeholder="এখানে সব লেখা পেস্ট করুন..."
+                                className="w-full p-4 rounded-xl border border-blue-100 dark:border-blue-900/30 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleBulkImport}
+                                  className="flex-1 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-600/20"
+                                >
+                                  পৃষ্ঠাগুলো আলাদা করুন
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowBulkImport(false)}
+                                  className="px-4 py-2 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                >
+                                  বাতিল
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                            {pages.map((page, index) => (
+                              <div key={index} className="space-y-2 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-black/5 dark:border-white/5 relative group">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">পৃষ্ঠা {index + 1}</span>
+                                  {pages.length > 1 && (
+                                    <button 
+                                      type="button"
+                                      onClick={() => setPages(pages.filter((_, i) => i !== index))}
+                                      className="text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                                <textarea
+                                  required
+                                  rows={4}
+                                  placeholder={`পৃষ্ঠা ${index + 1} এর লেখা...`}
+                                  value={page}
+                                  onChange={(e) => {
+                                    const newPages = [...pages];
+                                    newPages[index] = e.target.value;
+                                    setPages(newPages);
+                                  }}
+                                  className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-2xl font-black uppercase tracking-widest transition-all"
+                    >
+                      বাতিল
+                    </button>
+                    {editingBookId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const book = books.find(b => b.id === editingBookId);
+                          if (book) {
+                            handleDeleteBook(book);
+                            resetForm();
+                          }
+                        }}
+                        className="flex-1 py-4 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                      >
+                        <Trash2 size={18} />
+                        মুছে ফেলুন
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20"
+                    >
+                      <Save size={18} />
+                      {editingBookId ? 'আপডেট করুন' : 'সেভ করুন'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Password Edit Modal */}
+        {editingPasswordUserId && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-black tracking-tight">পাসওয়ার্ড এডিট</h3>
+                  <button onClick={() => setEditingPasswordUserId(null)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                    <X size={20} />
+                  </button>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">নতুন পাসওয়ার্ড</label>
+                  <input
+                    type="text"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all font-bold"
+                    placeholder="নতুন পাসওয়ার্ড..."
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setEditingPasswordUserId(null)}
+                    className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-2xl font-black uppercase tracking-widest transition-all"
+                  >
+                    বাতিল
+                  </button>
+                  <button
+                    onClick={handleUpdatePassword}
+                    className="flex-1 py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black uppercase tracking-widest transition-all shadow-lg"
+                  >
+                    সেভ
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Book Order Modal */}
+        {editingOrderBookId && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ArrowUpNarrowWide className="text-amber-500" size={20} />
+                    <h3 className="text-xl font-black tracking-tight">বইয়ের সিরিয়াল সেট করুন</h3>
+                  </div>
+                  <button onClick={() => setEditingOrderBookId(null)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                    <X size={20} />
+                  </button>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">সিরিয়াল নম্বর (যেমন: ১, ২, ৩...)</label>
+                  <input
+                    type="number"
+                    value={newOrderIndex}
+                    onChange={(e) => setNewOrderIndex(parseInt(e.target.value) || 0)}
+                    className="w-full p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all font-bold"
+                    placeholder="সিরিয়াল নম্বর..."
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setEditingOrderBookId(null)}
+                    className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-2xl font-black uppercase tracking-widest transition-all"
+                  >
+                    বাতিল
+                  </button>
+                  <button
+                    onClick={handleUpdateOrder}
+                    className="flex-1 py-4 bg-amber-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all shadow-lg"
+                  >
+                    সেভ করুন
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Toast Notification */}
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
+              className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border ${
+                toast.type === 'success' 
+                  ? 'bg-emerald-500 text-white border-emerald-400' 
+                  : 'bg-rose-500 text-white border-rose-400'
+              }`}
+            >
+              <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                {toast.type === 'success' ? <Check size={14} /> : <X size={14} />}
+              </div>
+              <span className="text-sm font-bold">{toast.message}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Custom Confirm Modal */}
+        <AnimatePresence>
+          {confirmConfig && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden border border-black/5 dark:border-white/5"
+              >
+                <div className="p-8 text-center space-y-6">
+                  <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/20 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+                    <AlertCircle size={32} />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-black tracking-tight">আপনি কি নিশ্চিত?</h3>
+                    <p className="text-zinc-500 dark:text-zinc-400 text-sm font-bold">{confirmConfig.message}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setConfirmConfig(null)}
+                      className="py-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white text-sm font-black uppercase tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      না
+                    </button>
+                    <button
+                      onClick={() => {
+                        confirmConfig.onConfirm();
+                        setConfirmConfig(null);
+                      }}
+                      className="py-4 rounded-2xl bg-red-600 text-white text-sm font-black uppercase tracking-widest hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                    >
+                      হ্যাঁ
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </main>
+    </div>
+  );
+};
+
+

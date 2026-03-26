@@ -1,0 +1,7 @@
+{
+  "name": "InnerPower Book",
+  "description": "High-end eBook App for personal growth and strategic thinking.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
