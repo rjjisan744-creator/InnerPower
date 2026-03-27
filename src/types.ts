@@ -8,8 +8,8 @@ export interface Category {
 }
 
 export interface Note {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   title: string;
   content: string;
   created_at: string;
@@ -17,7 +17,7 @@ export interface Note {
 }
 
 export interface User {
-  id: number;
+  id: string;
   username: string;
   password?: string;
   role: 'user' | 'admin';
@@ -34,7 +34,7 @@ export interface User {
   booksReadCount?: number;
   currentlyReading?: string;
   referralCode?: string;
-  referredBy?: number;
+  referredBy?: string;
   referralCount?: number;
   referralStats?: {
     granted_count: number;
@@ -50,7 +50,7 @@ export interface User {
 }
 
 export interface Book {
-  id: number;
+  id: string;
   title: string;
   author?: string;
   description: string;

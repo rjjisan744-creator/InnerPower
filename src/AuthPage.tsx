@@ -22,8 +22,41 @@ import {
   updateDoc,
   serverTimestamp,
   increment,
-  runTransaction
+  runTransaction,
+  getDocFromCache,
+  getDocFromServer
 } from 'firebase/firestore';
+
+// Error handling helper
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: any;
+}
+
+const handleFirestoreError = (error: any, operationType: OperationType, path: string | null) => {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return JSON.stringify(errInfo);
+};
 
 export const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(() => {
@@ -91,6 +124,18 @@ export const AuthPage: React.FC = () => {
   }, [username, isLogin]);
 
   useEffect(() => {
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'settings', 'general'));
+        console.log("Firestore connection successful");
+      } catch (error: any) {
+        console.error("Firestore connection test failed:", error);
+      }
+    };
+    testConnection();
+  }, []);
+
+  useEffect(() => {
     const fetchSettings = async () => {
       try {
         const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
@@ -139,112 +184,136 @@ export const AuthPage: React.FC = () => {
 
     try {
       if (isLogin) {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
-        
-        if (!userDoc.exists()) {
-          throw new Error("ইউজার ডাটা পাওয়া যায়নি।");
-        }
-
-        const userData = userDoc.data();
-        
-        // Update device ID and last login
-        await updateDoc(doc(db, 'users', userCredential.user.uid), {
-          device_id: deviceId,
-          last_login_at: serverTimestamp(),
-          last_active_at: serverTimestamp()
-        });
-
-        const now = new Date();
-        const trialEnds = userData.trial_ends_at ? new Date(userData.trial_ends_at) : new Date(0);
-        const isTrialExpired = now > trialEnds;
-
-        const userObj = {
-          id: userCredential.user.uid,
-          username: userData.username,
-          role: userData.role,
-          status: userData.status,
-          isPaid: !!userData.is_paid,
-          isTrialExpired,
-          trialEndsAt: userData.trial_ends_at,
-          fullName: userData.full_name,
-          email: userData.email,
-          profilePicture: userData.profile_picture,
-          referralCode: userData.referral_code,
-          referralCount: userData.referral_count,
-          referredBy: userData.referred_by,
-          notes: userData.notes
-        };
-
-        localStorage.setItem('user', JSON.stringify(userObj));
-        localStorage.setItem('has_registered', 'true');
-        navigate('/');
-      } else {
-        // Register
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const trialEnds = new Date();
-        trialEnds.setDate(trialEnds.getDate() + 3);
-        
-        const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-        
-        const userData = {
-          username,
-          role: 'user',
-          status: 'pending',
-          is_paid: false,
-          device_id: deviceId,
-          created_at: serverTimestamp(),
-          trial_ends_at: trialEnds.toISOString(),
-          referral_code: myReferralCode,
-          referral_count: 0,
-          referred_by: null
-        };
-
-        await setDoc(doc(db, 'users', userCredential.user.uid), userData);
-
-        // Handle referral
-        if (referralCode) {
-          const q = query(collection(db, "users"), where("referral_code", "==", referralCode));
-          const querySnapshot = await getDocs(q);
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, email, password);
+          const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
           
-          if (!querySnapshot.empty) {
-            const referrerDoc = querySnapshot.docs[0];
-            const referrerData = referrerDoc.data();
-            
-            if (referrerData.referral_count < 10) {
-              await runTransaction(db, async (transaction) => {
-                transaction.update(doc(db, 'users', referrerDoc.id), {
-                  referral_count: increment(1)
-                });
-                
-                const referralRef = doc(collection(db, 'referrals'));
-                transaction.set(referralRef, {
-                  referrer_id: referrerDoc.id,
-                  referee_id: userCredential.user.uid,
-                  bonus_granted: false,
-                  created_at: serverTimestamp()
-                });
+          if (!userDoc.exists()) {
+            setError("আপনার অ্যাকাউন্ট ডাটাবেসে পাওয়া যায়নি। দয়া করে নতুন করে রেজিস্ট্রেশন করুন।");
+            return;
+          }
 
-                transaction.update(doc(db, 'users', userCredential.user.uid), {
-                  referred_by: referrerDoc.id,
-                  trial_ends_at: new Date(new Date().setDate(new Date().getDate() + 6)).toISOString()
-                });
-              });
-            }
+          const userData = userDoc.data();
+          
+          // Update device ID and last login
+          await updateDoc(doc(db, 'users', userCredential.user.uid), {
+            device_id: deviceId,
+            last_login_at: serverTimestamp(),
+            last_active_at: serverTimestamp()
+          });
+
+          const now = new Date();
+          const trialEnds = userData.trial_ends_at ? new Date(userData.trial_ends_at) : new Date(0);
+          const isTrialExpired = now > trialEnds;
+
+          const userObj = {
+            id: userCredential.user.uid,
+            username: userData.username,
+            role: userData.role,
+            status: userData.status,
+            isPaid: !!userData.is_paid,
+            isTrialExpired,
+            trialEndsAt: userData.trial_ends_at,
+            fullName: userData.full_name,
+            email: userData.email,
+            profilePicture: userData.profile_picture,
+            referralCode: userData.referral_code,
+            referralCount: userData.referral_count,
+            referredBy: userData.referred_by,
+            notes: userData.notes
+          };
+
+          localStorage.setItem('user', JSON.stringify(userObj));
+          localStorage.setItem('has_registered', 'true');
+          navigate('/');
+        } catch (authErr: any) {
+          console.error("Login error:", authErr);
+          if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
+            setError("ভুল জিমেইল বা পাসওয়ার্ড");
+          } else if (authErr.code === 'auth/operation-not-allowed') {
+            setError("Firebase-এ Email/Password provider চালু করা নেই। দয়া করে Firebase Console থেকে এটি চালু করুন।");
+          } else {
+            setError(`লগইন করতে সমস্যা হচ্ছে: ${authErr.message}`);
           }
         }
+      } else {
+        // Register
+        try {
+          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const trialEnds = new Date();
+          trialEnds.setDate(trialEnds.getDate() + 3);
+          
+          const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+          
+          const userData = {
+            username,
+            role: 'user',
+            status: 'pending',
+            is_paid: false,
+            device_id: deviceId,
+            created_at: serverTimestamp(),
+            trial_ends_at: trialEnds.toISOString(),
+            referral_code: myReferralCode,
+            referral_count: 0,
+            referred_by: null
+          };
 
-        localStorage.setItem('has_registered', 'true');
-        setIsLogin(true);
-        setError('Registration successful. Please login.');
+          try {
+            await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+
+            // Handle referral
+            if (referralCode) {
+              const q = query(collection(db, "users"), where("referral_code", "==", referralCode), limit(1));
+              const querySnapshot = await getDocs(q);
+              
+              if (!querySnapshot.empty) {
+                const referrerDoc = querySnapshot.docs[0];
+                const referrerData = referrerDoc.data();
+                
+                if (referrerData.referral_count < 10) {
+                  await runTransaction(db, async (transaction) => {
+                    transaction.update(doc(db, 'users', referrerDoc.id), {
+                      referral_count: increment(1)
+                    });
+                    
+                    const referralRef = doc(collection(db, 'referrals'));
+                    transaction.set(referralRef, {
+                      referrer_id: referrerDoc.id,
+                      referee_id: userCredential.user.uid,
+                      bonus_granted: false,
+                      created_at: serverTimestamp()
+                    });
+
+                    transaction.update(doc(db, 'users', userCredential.user.uid), {
+                      referred_by: referrerDoc.id,
+                      trial_ends_at: new Date(new Date().setDate(new Date().getDate() + 6)).toISOString()
+                    });
+                  });
+                }
+              }
+            }
+
+            localStorage.setItem('has_registered', 'true');
+            setIsLogin(true);
+            setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
+          } catch (fsErr: any) {
+            const detailedError = handleFirestoreError(fsErr, OperationType.WRITE, `users/${userCredential.user.uid}`);
+            setError(`ডাটাবেসে তথ্য সেভ করতে সমস্যা হয়েছে: ${detailedError}`);
+          }
+        } catch (authErr: any) {
+          console.error("Registration error:", authErr);
+          if (authErr.code === 'auth/email-already-in-use') {
+            setError("এই জিমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা হয়েছে");
+          } else if (authErr.code === 'auth/operation-not-allowed') {
+            setError("Firebase-এ Email/Password provider চালু করা নেই। দয়া করে Firebase Console থেকে এটি চালু করুন।");
+          } else {
+            setError(`রেজিস্ট্রেশন করতে সমস্যা হচ্ছে: ${authErr.message}`);
+          }
+        }
       }
     } catch (err: any) {
-      console.error("Auth error:", err);
-      let message = "সার্ভারের সাথে সংযোগ করা যাচ্ছে না।";
-      if (err.code === 'auth/user-not-found') message = "এই ইউজার দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি।";
-      if (err.code === 'auth/wrong-password') message = "আপনার পাসওয়ার্ডটি ভুল।";
-      if (err.code === 'auth/email-already-in-use') message = "এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে।";
-      setError(err.message || message);
+      console.error("Submit error:", err);
+      setError("সার্ভার থেকে ভুল রেসপন্স এসেছে। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।");
     }
   };
 

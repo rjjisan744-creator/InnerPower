@@ -11,8 +11,9 @@ import { PendingActivationPage } from './PendingActivationPage';
 import { BlockedAccountPage } from './BlockedAccountPage';
 import { User } from './types';
 
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { db, auth } from './firebase';
 
 const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -20,44 +21,48 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
-    const checkStatus = async () => {
-      setLoading(true);
-      const storedUser = localStorage.getItem('user');
-      if (!storedUser) {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Use onSnapshot for real-time status updates (blocked/pending)
+          const unsubDoc = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
+            if (docSnap.exists()) {
+              const userData = docSnap.data();
+              const updatedUser: User = {
+                id: docSnap.id,
+                username: userData.username || '',
+                role: userData.role || 'user',
+                status: userData.status || 'pending',
+                isPaid: !!userData.is_paid,
+                trialEndsAt: userData.trial_ends_at || '',
+                isTrialExpired: userData.trial_ends_at ? new Date(userData.trial_ends_at) < new Date() : false,
+                ...userData
+              };
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+              setUser(updatedUser);
+            } else {
+              // User exists in Auth but not in Firestore (shouldn't happen normally)
+              setUser(null);
+            }
+            setLoading(false);
+          }, (error) => {
+            console.error("Firestore listener error:", error);
+            setLoading(false);
+          });
+          return () => unsubDoc();
+        } catch (error) {
+          console.error("Auth state sync error:", error);
+          setLoading(false);
+        }
+      } else {
+        localStorage.removeItem('user');
         setUser(null);
         setLoading(false);
-        return;
       }
+    });
 
-      const parsedUser = JSON.parse(storedUser);
-      try {
-        const userDoc = await getDoc(doc(db, "users", parsedUser.id));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          const updatedUser = {
-            ...parsedUser,
-            ...userData,
-            id: userDoc.id,
-            isPaid: !!userData.is_paid,
-            trialEndsAt: userData.trial_ends_at,
-            isTrialExpired: userData.trial_ends_at ? new Date(userData.trial_ends_at) < new Date() : false
-          };
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-          setUser(updatedUser);
-        } else {
-          localStorage.removeItem('user');
-          setUser(null);
-        }
-      } catch (error) {
-        console.error("Status check failed:", error);
-        setUser(parsedUser);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkStatus();
-  }, [location.pathname]);
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (location.pathname === '/auth' && user) {
