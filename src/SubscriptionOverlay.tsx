@@ -9,6 +9,9 @@ interface SubscriptionOverlayProps {
   onClose?: () => void;
 }
 
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase';
+
 export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, onClose }) => {
   const [bkashNumber, setBkashNumber] = useState('');
   const [transactionId, setTransactionId] = useState('');
@@ -36,25 +39,19 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
     setIsSubmitting(true);
     setError(null);
     try {
-      const res = await fetch('/api/subscriptions/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          amount: AMOUNT,
-          bkashNumber, // This will now store the last digit(s)
-          transactionId
-        }),
+      await addDoc(collection(db, "subscriptions"), {
+        user_id: user.id,
+        username: user.username,
+        amount: AMOUNT,
+        bkash_number: bkashNumber,
+        transaction_id: transactionId,
+        status: 'pending',
+        created_at: serverTimestamp()
       });
-      if (res.ok) {
-        setSubmitted(true);
-      } else {
-        const data = await res.json();
-        setError(data.message || 'পেমেন্ট রিকোয়েস্ট পাঠাতে সমস্যা হয়েছে');
-      }
+      setSubmitted(true);
     } catch (error) {
       console.error('Error submitting subscription:', error);
-      setError('সার্ভারের সাথে সংযোগ করা যাচ্ছে না।');
+      setError('পেমেন্ট রিকোয়েস্ট পাঠাতে সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।');
     } finally {
       setIsSubmitting(false);
     }

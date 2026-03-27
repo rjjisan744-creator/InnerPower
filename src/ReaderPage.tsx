@@ -6,6 +6,15 @@ import { Home, ChevronLeft, ChevronRight, File } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CommentBox } from './components/CommentBox';
 import { SubscriptionOverlay } from './SubscriptionOverlay';
+import { db, auth } from './firebase';
+import { 
+  doc, 
+  getDoc, 
+  onSnapshot, 
+  addDoc, 
+  collection, 
+  serverTimestamp 
+} from 'firebase/firestore';
 
 export const ReaderPage: React.FC = () => {
   const { id } = useParams();
@@ -65,48 +74,66 @@ export const ReaderPage: React.FC = () => {
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
     
-    // Verify status with server
-    fetch(`/api/auth/me/${parsedUser.id}`)
-      .then(res => {
-        if (res.status === 403) {
-          return res.json().then(data => {
-            localStorage.removeItem('user');
-            navigate('/auth', { state: { error: data.message || data.error } });
-            throw new Error('Blocked');
-          });
+    // Verify status with Firestore
+    const unsubUser = onSnapshot(doc(db, 'users', parsedUser.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.status === 'blocked') {
+          localStorage.removeItem('user');
+          navigate('/auth', { state: { error: "আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।" } });
+          return;
         }
-        return res.json();
-      })
-      .then(data => {
-        if (data.status !== 'active' || (data.isTrialExpired && !data.isPaid)) {
+        
+        const now = new Date();
+        const trialEnds = data.trial_ends_at ? new Date(data.trial_ends_at) : new Date(0);
+        const isTrialExpired = now > trialEnds;
+
+        const updatedUser = {
+          ...parsedUser,
+          ...data,
+          id: docSnap.id,
+          isTrialExpired
+        };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+
+        if (data.status !== 'active' || (isTrialExpired && !data.is_paid)) {
           navigate('/');
         }
-        setUser(data);
-        localStorage.setItem('user', JSON.stringify(data));
-      })
-      .catch(err => console.error('Auth verification failed:', err));
+      } else {
+        localStorage.removeItem('user');
+        navigate('/auth');
+      }
+    });
 
-    fetchBook();
+    if (id) {
+      const unsubBook = onSnapshot(doc(db, 'books', id), (docSnap) => {
+        if (docSnap.exists()) {
+          setBook({ id: docSnap.id, ...docSnap.data() } as any);
+        }
+      });
 
-    if (parsedUser && id) {
-      fetch(`/api/users/${parsedUser.id}/reading-history`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookId: id }),
+      // Add to reading history
+      addDoc(collection(db, 'reading_history'), {
+        user_id: parsedUser.id,
+        book_id: id,
+        read_at: serverTimestamp()
       }).catch(console.error);
+
+      return () => {
+        unsubUser();
+        unsubBook();
+      };
     }
 
     // Secure Screen: Disable right click and selection
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
     document.addEventListener('contextmenu', handleContextMenu);
-    return () => document.removeEventListener('contextmenu', handleContextMenu);
+    return () => {
+      unsubUser();
+      document.removeEventListener('contextmenu', handleContextMenu);
+    };
   }, []);
-
-  const fetchBook = async () => {
-    const res = await fetch(`/api/books/${id}`);
-    const data = await res.json();
-    setBook(data);
-  };
 
   if (!book) return null;
 

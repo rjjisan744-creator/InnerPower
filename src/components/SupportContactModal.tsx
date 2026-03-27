@@ -19,9 +19,12 @@ interface SupportContactModalProps {
   username?: string;
 }
 
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
+
 export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen, onClose, userId, username }) => {
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,26 +34,19 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const fetchMessages = React.useCallback(async () => {
-    if (!userId) return;
-    try {
-      const res = await fetch(`/api/support/messages/${userId}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setMessages(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch messages:', err);
-    }
-  }, [userId]);
-
   useEffect(() => {
     if (isOpen && userId) {
-      fetchMessages();
-      const interval = setInterval(fetchMessages, 5000);
-      return () => clearInterval(interval);
+      const q = query(
+        collection(db, "support_messages"),
+        where("user_id", "==", userId),
+        orderBy("created_at", "asc")
+      );
+      const unsub = onSnapshot(q, (snap) => {
+        setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      return () => unsub();
     }
-  }, [isOpen, userId, fetchMessages]);
+  }, [isOpen, userId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -66,26 +62,16 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
     setError('');
 
     try {
-      const res = await fetch('/api/support/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          username: username || 'Guest',
-          message: currentMessage,
-          sender_role: 'user'
-        }),
+      await addDoc(collection(db, "support_messages"), {
+        user_id: userId,
+        username: username || 'Guest',
+        message: currentMessage,
+        sender_role: 'user',
+        status: 'unread',
+        created_at: serverTimestamp()
       });
-
-      const data = await res.json();
-      if (data.success) {
-        fetchMessages();
-      } else {
-        setError(data.message || 'মেসেজ পাঠানো যায়নি।');
-        setMessage(currentMessage);
-      }
     } catch (err) {
-      setError('সার্ভারের সাথে সংযোগ করা যাচ্ছে না।');
+      setError('মেসেজ পাঠানো যায়নি।');
       setMessage(currentMessage);
     } finally {
       setIsSending(false);
@@ -160,7 +146,7 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
                         {msg.message}
                       </div>
                       <p className={`text-[8px] font-bold text-zinc-400 ${msg.sender_role === 'user' ? 'text-right' : 'text-left'}`}>
-                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {msg.created_at?.toDate ? msg.created_at.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                       </p>
                     </div>
                   </div>

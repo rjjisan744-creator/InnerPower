@@ -1,18 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { Send, MessageSquare, User, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { db } from '../firebase';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  serverTimestamp,
+  Timestamp
+} from 'firebase/firestore';
 
 interface Comment {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   username: string;
   comment: string;
-  created_at: string;
+  created_at: any;
 }
 
 interface CommentBoxProps {
   bookId: string;
-  currentUserId: number;
+  currentUserId: string;
   currentUserName: string;
   isAdmin?: boolean;
 }
@@ -22,20 +35,24 @@ export const CommentBox: React.FC<CommentBoxProps> = ({ bookId, currentUserId, c
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const fetchComments = async () => {
-    try {
-      const res = await fetch(`/api/books/${bookId}/comments`);
-      const data = await res.json();
-      setComments(data);
-    } catch (error) {
-      console.error('Error fetching comments:', error);
-    }
-  };
-
   useEffect(() => {
-    fetchComments();
-    const interval = setInterval(fetchComments, 10000); // Poll every 10 seconds
-    return () => clearInterval(interval);
+    const q = query(
+      collection(db, 'comments'),
+      where('book_id', '==', bookId),
+      orderBy('created_at', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const commentsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Comment[];
+      setComments(commentsData);
+    }, (error) => {
+      console.error("Error fetching comments:", error);
+    });
+
+    return () => unsubscribe();
   }, [bookId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,20 +61,14 @@ export const CommentBox: React.FC<CommentBoxProps> = ({ bookId, currentUserId, c
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/books/${bookId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUserId,
-          username: currentUserName,
-          comment: newComment.trim(),
-        }),
+      await addDoc(collection(db, 'comments'), {
+        book_id: bookId,
+        user_id: currentUserId,
+        username: currentUserName,
+        comment: newComment.trim(),
+        created_at: serverTimestamp()
       });
-
-      if (res.ok) {
-        setNewComment('');
-        fetchComments();
-      }
+      setNewComment('');
     } catch (error) {
       console.error('Error posting comment:', error);
     } finally {
@@ -65,23 +76,19 @@ export const CommentBox: React.FC<CommentBoxProps> = ({ bookId, currentUserId, c
     }
   };
 
-  const handleDelete = async (commentId: number) => {
+  const handleDelete = async (commentId: string) => {
     if (!window.confirm('আপনি কি এই কমেন্টটি মুছে ফেলতে চান?')) return;
 
     try {
-      const res = await fetch(`/api/comments/${commentId}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        fetchComments();
-      }
+      await deleteDoc(doc(db, 'comments', commentId));
     } catch (error) {
       console.error('Error deleting comment:', error);
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+  const formatDate = (createdAt: any) => {
+    if (!createdAt) return '';
+    const date = createdAt instanceof Timestamp ? createdAt.toDate() : new Date(createdAt);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 

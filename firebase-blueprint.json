@@ -1,0 +1,217 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and account information",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "status": { "type": "string", "enum": ["pending", "active", "blocked"] },
+        "is_paid": { "type": "boolean" },
+        "device_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "trial_ends_at": { "type": "string", "format": "date-time" },
+        "last_login_at": { "type": "string", "format": "date-time" },
+        "last_active_at": { "type": "string", "format": "date-time" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "location_name": { "type": "string" },
+        "referral_code": { "type": "string" },
+        "referred_by": { "type": "string" },
+        "referral_count": { "type": "integer" },
+        "notes": { "type": "string" },
+        "full_name": { "type": "string" },
+        "email": { "type": "string" },
+        "profile_picture": { "type": "string" }
+      },
+      "required": ["username", "password"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "User created notes",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "title"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Subscription payment requests",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "amount": { "type": "number" },
+        "bkash_number": { "type": "string" },
+        "transaction_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "amount", "bkash_number", "transaction_id"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Book categories",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "is_locked": { "type": "boolean" },
+        "password": { "type": "string" },
+        "sort_index": { "type": "integer" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "Book": {
+      "title": "Book",
+      "description": "Book information and content",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "description": { "type": "string" },
+        "cover_url": { "type": "string" },
+        "pdf_url": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string" },
+        "sort_index": { "type": "integer" },
+        "is_deleted": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Book comments",
+      "type": "object",
+      "properties": {
+        "book_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "username": { "type": "string" },
+        "comment": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["book_id", "user_id", "comment"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System or user notifications",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "success", "warning", "error"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message"]
+    },
+    "NotificationReply": {
+      "title": "NotificationReply",
+      "description": "Replies to notifications",
+      "type": "object",
+      "properties": {
+        "notification_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "username": { "type": "string" },
+        "reply": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["notification_id", "user_id", "reply"]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "Messages for live support",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "username": { "type": "string" },
+        "sender_role": { "type": "string", "enum": ["user", "admin"] },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["unread", "read"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["message"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "App settings",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string" }
+      },
+      "required": ["key", "value"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User documents"
+    },
+    "/notes/{noteId}": {
+      "schema": "Note",
+      "description": "User notes"
+    },
+    "/subscriptions/{subId}": {
+      "schema": "Subscription",
+      "description": "Subscription requests"
+    },
+    "/categories/{catId}": {
+      "schema": "Category",
+      "description": "Book categories"
+    },
+    "/books/{bookId}": {
+      "schema": "Book",
+      "description": "Books"
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Book comments"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "Notifications"
+    },
+    "/notification_replies/{replyId}": {
+      "schema": "NotificationReply",
+      "description": "Notification replies"
+    },
+    "/support_messages/{msgId}": {
+      "schema": "SupportMessage",
+      "description": "Support messages"
+    },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "App settings"
+    },
+    "/reading_history/{historyId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string" },
+          "book_id": { "type": "string" },
+          "read_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "User reading history"
+    },
+    "/wishlist/{wishId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string" },
+          "book_id": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "User wishlist"
+    }
+  }
+}

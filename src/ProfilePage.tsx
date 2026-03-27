@@ -58,6 +58,9 @@ const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () 
   );
 };
 
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, orderBy, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
+
 export const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -94,24 +97,30 @@ export const ProfilePage: React.FC = () => {
       });
 
       // Fetch fresh data for stats
-      fetch(`/api/auth/me/${parsedUser.id}`)
-        .then(res => {
-          if (res.status === 403) {
-            return res.json().then(data => {
-              localStorage.removeItem('user');
-              navigate('/auth', { state: { error: data.message || data.error } });
-              throw new Error('Blocked');
-            });
+      const unsub = onSnapshot(doc(db, "users", parsedUser.id), (docSnap) => {
+        if (docSnap.exists()) {
+          const userData = docSnap.data();
+          if (userData.status === 'blocked') {
+            localStorage.removeItem('user');
+            navigate('/auth', { state: { error: 'Your account has been blocked.' } });
+            return;
           }
-          return res.json();
-        })
-        .then(data => {
-          if (data.id) {
-            setUser(data);
-            localStorage.setItem('user', JSON.stringify(data));
-          }
-        })
-        .catch(err => console.error('Auth verification failed:', err));
+          const updatedUser = {
+            ...parsedUser,
+            ...userData,
+            id: docSnap.id,
+            isPaid: !!userData.is_paid,
+            trialEndsAt: userData.trial_ends_at,
+            isTrialExpired: userData.trial_ends_at ? new Date(userData.trial_ends_at) < new Date() : false
+          };
+          setUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+        } else {
+          localStorage.removeItem('user');
+          navigate('/auth');
+        }
+      });
+      return () => unsub();
     } else {
       navigate('/auth');
     }
@@ -120,16 +129,13 @@ export const ProfilePage: React.FC = () => {
   // Fetch all notes
   useEffect(() => {
     if (user) {
-      fetch(`/api/users/${user.id}/all-notes`)
-        .then(res => res.json())
-        .then(data => {
-          setNotesList(data);
-          if (data.length > 0 && !selectedNote) {
-            // Don't auto-select to keep list view clean
-          }
-        });
+      const q = query(collection(db, "user_notes"), where("user_id", "==", user.id), orderBy("updated_at", "desc"));
+      const unsub = onSnapshot(q, (snap) => {
+        setNotesList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+      });
+      return () => unsub();
     }
-  }, [user]);
+  }, [user?.id]);
 
   // Debounced Auto-save for selected note
   useEffect(() => {
@@ -144,14 +150,15 @@ export const ProfilePage: React.FC = () => {
   const handleCreateNote = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/users/${user.id}/all-notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'New Note', content: '' }),
-      });
-      const newNote = await res.json();
-      setNotesList([newNote, ...notesList]);
-      setSelectedNote(newNote);
+      const newNoteData = {
+        user_id: user.id,
+        title: 'New Note',
+        content: '',
+        updated_at: serverTimestamp()
+      };
+      const docRef = await addDoc(collection(db, "user_notes"), newNoteData);
+      const newNote = { id: docRef.id, ...newNoteData, updated_at: new Date().toISOString() };
+      setSelectedNote(newNote as any);
     } catch (error) {
       showToast('Failed to create note', 'error');
     }
@@ -161,34 +168,23 @@ export const ProfilePage: React.FC = () => {
     if (!selectedNote) return;
     setSaveStatus('saving');
     try {
-      const res = await fetch(`/api/notes/${selectedNote.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          title: selectedNote.title, 
-          content: selectedNote.content 
-        }),
+      await updateDoc(doc(db, "user_notes", String(selectedNote.id)), {
+        title: selectedNote.title,
+        content: selectedNote.content,
+        updated_at: serverTimestamp()
       });
-      if (res.ok) {
-        setSaveStatus('saved');
-        setNotesList(prev => prev.map(n => n.id === selectedNote.id ? selectedNote : n));
-        setTimeout(() => setSaveStatus('idle'), 2000);
-      } else {
-        setSaveStatus('error');
-      }
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (error) {
       setSaveStatus('error');
     }
   };
 
-  const handleDeleteNote = async (id: number) => {
+  const handleDeleteNote = async (id: string) => {
     try {
-      const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setNotesList(prev => prev.filter(n => n.id !== id));
-        if (selectedNote?.id === id) setSelectedNote(null);
-        showToast('Note deleted');
-      }
+      await deleteDoc(doc(db, "user_notes", id));
+      if (selectedNote?.id === id) setSelectedNote(null);
+      showToast('Note deleted');
     } catch (error) {
       showToast('Failed to delete note', 'error');
     }
@@ -207,9 +203,9 @@ export const ProfilePage: React.FC = () => {
     if (!user) return;
     setLoadingReferrals(true);
     try {
-      const res = await fetch(`/api/users/${user.id}/referrals`);
-      const data = await res.json();
-      setReferralHistory(data);
+      const q = query(collection(db, "referrals"), where("referrer_id", "==", user.id), orderBy("created_at", "desc"));
+      const snap = await getDocs(q);
+      setReferralHistory(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setShowReferralModal(true);
     } catch (error) {
       console.error('Error fetching referral history:', error);
@@ -235,7 +231,6 @@ export const ProfilePage: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    // Validate file size (e.g., 2MB limit)
     if (file.size > 2 * 1024 * 1024) {
       showToast('Image size must be less than 2MB', 'error');
       return;
@@ -246,23 +241,11 @@ export const ProfilePage: React.FC = () => {
       const base64String = reader.result as string;
       setLoading(true);
       
-      // 1. Save Locally First (Instant UI Update)
-      saveToLocalStorage({ profilePicture: base64String });
-      showToast('Profile picture updated locally!');
-
-      // 2. Sync to Server in background (Graceful)
       try {
-        await fetch(`/api/users/${user.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            fullName: user.fullName || user.username,
-            email: user.email || '',
-            profilePicture: base64String 
-          }),
-        });
+        await updateDoc(doc(db, "users", user.id), { profile_picture: base64String });
+        showToast('Profile picture updated!');
       } catch (error) {
-        console.warn('Background sync failed, but data is saved locally.');
+        console.warn('Sync failed');
       } finally {
         setLoading(false);
       }
@@ -275,28 +258,15 @@ export const ProfilePage: React.FC = () => {
     if (!user) return;
 
     setLoading(true);
-    
-    // 1. Save Locally First
-    saveToLocalStorage({ 
-      fullName: editForm.fullName, 
-      email: editForm.email 
-    });
-    setIsEditing(false);
-    showToast('Profile updated successfully!');
-
-    // 2. Sync to Server in background
     try {
-      await fetch(`/api/users/${user.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          fullName: editForm.fullName,
-          email: editForm.email,
-          profilePicture: user.profilePicture 
-        }),
+      await updateDoc(doc(db, "users", user.id), { 
+        full_name: editForm.fullName,
+        email: editForm.email
       });
+      setIsEditing(false);
+      showToast('Profile updated successfully!');
     } catch (error) {
-      console.warn('Background sync failed, but data is saved locally.');
+      console.warn('Sync failed');
     } finally {
       setLoading(false);
     }
@@ -322,9 +292,17 @@ export const ProfilePage: React.FC = () => {
     if (!user) return;
     setLoadingList(true);
     try {
-      const res = await fetch(`/api/users/${user.id}/wishlist`);
-      const data = await res.json();
-      setWishlistBooks(data);
+      const q = query(collection(db, "wishlist"), where("user_id", "==", user.id));
+      const snap = await getDocs(q);
+      const bookIds = snap.docs.map(doc => doc.data().book_id);
+      
+      if (bookIds.length === 0) {
+        setWishlistBooks([]);
+      } else {
+        const booksSnap = await getDocs(collection(db, "books"));
+        const allBooks = booksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book));
+        setWishlistBooks(allBooks.filter(b => bookIds.includes(b.id)));
+      }
       setShowWishlist(true);
     } catch (e) {
       showToast('Failed to load wishlist', 'error');
@@ -337,9 +315,22 @@ export const ProfilePage: React.FC = () => {
     if (!user) return;
     setLoadingList(true);
     try {
-      const res = await fetch(`/api/users/${user.id}/reading-history`);
-      const data = await res.json();
-      setHistoryBooks(data);
+      const q = query(collection(db, "reading_history"), where("user_id", "==", user.id), orderBy("read_at", "desc"));
+      const snap = await getDocs(q);
+      const historyData = snap.docs.map(doc => doc.data());
+      const bookIds = historyData.map(h => h.book_id);
+
+      if (bookIds.length === 0) {
+        setHistoryBooks([]);
+      } else {
+        const booksSnap = await getDocs(collection(db, "books"));
+        const allBooks = booksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book));
+        const historyList = historyData.map(h => {
+          const book = allBooks.find(b => b.id === h.book_id);
+          return book ? { ...book, read_at: h.read_at } : null;
+        }).filter(Boolean) as Book[];
+        setHistoryBooks(historyList);
+      }
       setShowHistory(true);
     } catch (e) {
       showToast('Failed to load history', 'error');

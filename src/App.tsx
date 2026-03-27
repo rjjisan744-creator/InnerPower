@@ -11,6 +11,9 @@ import { PendingActivationPage } from './PendingActivationPage';
 import { BlockedAccountPage } from './BlockedAccountPage';
 import { User } from './types';
 
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './firebase';
+
 const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,27 +31,25 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       const parsedUser = JSON.parse(storedUser);
       try {
-        // Add a timeout to the fetch
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-        const res = await fetch(`/api/auth/me/${parsedUser.id}`, {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const updatedUser = await res.json();
+        const userDoc = await getDoc(doc(db, "users", parsedUser.id));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const updatedUser = {
+            ...parsedUser,
+            ...userData,
+            id: userDoc.id,
+            isPaid: !!userData.is_paid,
+            trialEndsAt: userData.trial_ends_at,
+            isTrialExpired: userData.trial_ends_at ? new Date(userData.trial_ends_at) < new Date() : false
+          };
           localStorage.setItem('user', JSON.stringify(updatedUser));
           setUser(updatedUser);
         } else {
-          // If user not found or error, clear storage
           localStorage.removeItem('user');
           setUser(null);
         }
       } catch (error) {
         console.error("Status check failed:", error);
-        // On network error or timeout, trust local storage for now
         setUser(parsedUser);
       } finally {
         setLoading(false);

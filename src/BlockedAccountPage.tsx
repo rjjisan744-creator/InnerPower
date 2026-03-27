@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { ShieldAlert, MessageSquare, LogOut, Phone, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SupportContactModal } from './components/SupportContactModal';
+import { db } from './firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 export const BlockedAccountPage: React.FC = () => {
   const navigate = useNavigate();
@@ -20,11 +22,17 @@ export const BlockedAccountPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
-      .then(data => {
-        setSmsSupportNumber(data.sms_support_number || '');
-      });
+    const fetchSettings = async () => {
+      try {
+        const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
+        if (settingsDoc.exists()) {
+          setSmsSupportNumber(settingsDoc.data().sms_support_number || '');
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+      }
+    };
+    fetchSettings();
   }, []);
   
   const handleLogout = () => {

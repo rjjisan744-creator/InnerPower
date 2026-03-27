@@ -5,6 +5,9 @@ import { ArrowLeft, BookOpen, User, Heart } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useApp } from './AppContext';
 
+import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
+
 export const BookInfoPage: React.FC = () => {
   const { id } = useParams();
   const [book, setBook] = useState<Book | null>(null);
@@ -14,38 +17,41 @@ export const BookInfoPage: React.FC = () => {
   const { user } = useApp();
 
   useEffect(() => {
-    const fetchBook = async () => {
-      try {
-        const res = await fetch(`/api/books/${id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setBook(data);
-        }
-      } catch (error) {
-        console.error('Error fetching book info:', error);
+    if (!id) return;
+    
+    const unsub = onSnapshot(doc(db, "books", id), (docSnap) => {
+      if (docSnap.exists()) {
+        setBook({ id: docSnap.id, ...docSnap.data() } as unknown as Book);
       }
-    };
-    fetchBook();
+    });
 
     if (user && id) {
-      fetch(`/api/users/${user.id}/wishlist/${id}`)
-        .then(res => res.json())
-        .then(data => setInWishlist(data.inWishlist));
+      const wishlistRef = doc(db, "wishlist", `${user.id}_${id}`);
+      const unsubWishlist = onSnapshot(wishlistRef, (docSnap) => {
+        setInWishlist(docSnap.exists());
+      });
+      return () => {
+        unsub();
+        unsubWishlist();
+      };
     }
-  }, [id, user]);
+
+    return () => unsub();
+  }, [id, user?.id]);
 
   const toggleWishlist = async () => {
-    if (!user || !book) return;
+    if (!user || !book || !id) return;
     setLoadingWishlist(true);
     try {
+      const wishlistRef = doc(db, "wishlist", `${user.id}_${id}`);
       if (inWishlist) {
-        await fetch(`/api/users/${user.id}/wishlist/${book.id}`, { method: 'DELETE' });
+        await deleteDoc(wishlistRef);
         setInWishlist(false);
       } else {
-        await fetch(`/api/users/${user.id}/wishlist`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookId: book.id }),
+        await setDoc(wishlistRef, {
+          user_id: user.id,
+          book_id: id,
+          created_at: new Date().toISOString()
         });
         setInWishlist(true);
       }

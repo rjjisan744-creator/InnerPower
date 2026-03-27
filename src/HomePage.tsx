@@ -7,6 +7,21 @@ import { LogOut, Settings, Shield, BookOpen, User as UserIcon, History, Bell, Se
 import { motion, AnimatePresence } from 'motion/react';
 import { FloatingActions } from './components/FloatingActions';
 import { SubscriptionOverlay } from './SubscriptionOverlay';
+import { db, auth } from './firebase';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  onSnapshot, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  serverTimestamp,
+  addDoc,
+  orderBy,
+  limit
+} from 'firebase/firestore';
 
 export const HomePage: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -41,58 +56,87 @@ export const HomePage: React.FC = () => {
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
     
-    // Verify status with server
-    fetch(`/api/auth/me/${parsedUser.id}`)
-      .then(async res => {
-        const contentType = res.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-          throw new Error("সার্ভার থেকে ভুল রেসপন্স এসেছে।");
+    // Verify status with Firestore
+    const unsubUser = onSnapshot(doc(db, 'users', parsedUser.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.status === 'blocked') {
+          localStorage.removeItem('user');
+          navigate('/auth', { state: { error: "আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।" } });
+          return;
         }
         
-        if (res.status === 403) {
-          const data = await res.json();
-          localStorage.removeItem('user');
-          navigate('/auth', { state: { error: data.message || data.error } });
-          throw new Error('Blocked');
-        }
-        return res.json();
-      })
-      .then(data => {
-        if (data.id) {
-          setUser(data);
-          localStorage.setItem('user', JSON.stringify(data));
-        }
-      })
-      .catch(err => {
-        console.error('Auth verification failed:', err);
-        if (err.message === 'Blocked') return;
-        // If server is down or returns HTML, we don't want to crash the app
-        // but we might want to inform the user if it's persistent
-      });
+        const now = new Date();
+        const trialEnds = data.trial_ends_at ? new Date(data.trial_ends_at) : new Date(0);
+        const isTrialExpired = now > trialEnds;
 
-    fetchBooks();
-    fetchSettings();
-    fetchNotifications(parsedUser.id);
-    fetchCategories();
+        const updatedUser = {
+          ...parsedUser,
+          ...data,
+          id: docSnap.id,
+          isTrialExpired
+        };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      } else {
+        localStorage.removeItem('user');
+        navigate('/auth');
+      }
+    }, (err) => {
+      console.error('Auth verification failed:', err);
+    });
 
-    // Calculate trial days left
-    if (parsedUser.trialEndsAt) {
-      const endsAt = new Date(parsedUser.trialEndsAt);
-      const now = new Date();
-      const diffTime = endsAt.getTime() - now.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      setTrialDaysLeft(diffDays > 0 ? diffDays : 0);
-    }
+    // Fetch Books
+    const unsubBooks = onSnapshot(collection(db, 'books'), (snapshot) => {
+      const booksData = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as any))
+        .filter(book => !book.is_deleted)
+        .sort((a, b) => (a.sort_index || 0) - (b.sort_index || 0));
+      setBooks(booksData);
+    });
+
+    // Fetch Categories
+    const unsubCats = onSnapshot(collection(db, 'categories'), (snapshot) => {
+      const catsData = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as any))
+        .sort((a, b) => (a.sort_index || 0) - (b.sort_index || 0));
+      setCategories(catsData);
+    });
+
+    // Fetch Settings
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setHomeText(data.home_text || '');
+        setHomeFontSize(parseInt(data.home_font_size) || 16);
+        setLockAllCategories(!!data.lock_all_categories);
+      }
+    });
+
+    // Fetch Notifications
+    const qNotif = query(
+      collection(db, 'notifications'), 
+      where('user_id', 'in', [null, parsedUser.id]),
+      orderBy('created_at', 'desc'),
+      limit(20)
+    );
+    const unsubNotif = onSnapshot(qNotif, (snapshot) => {
+      const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setNotifications(notifs);
+      
+      const lastSeenId = localStorage.getItem('lastSeenNotificationId') || '';
+      const unread = notifs.filter((n: any) => n.id > lastSeenId).length;
+      setUnreadCount(unread);
+    });
 
     // Heartbeat ping to track activity
     const pingInterval = setInterval(() => {
       if (parsedUser.id) {
-        fetch(`/api/users/ping/${parsedUser.id}`, { method: 'POST' });
+        updateDoc(doc(db, 'users', parsedUser.id), {
+          last_active_at: serverTimestamp()
+        }).catch(err => console.error("Ping error:", err));
       }
-    }, 30000); // Every 30 seconds
-
-    const interval = setInterval(fetchSettings, 5000);
-    const notifInterval = setInterval(() => fetchNotifications(parsedUser.id), 10000); // Check for notifications every 10s
+    }, 30000);
 
     // Request location
     if (navigator.geolocation && parsedUser.id) {
@@ -100,10 +144,10 @@ export const HomePage: React.FC = () => {
         async (position) => {
           const { latitude, longitude } = position.coords;
           try {
-            await fetch(`/api/users/location/${parsedUser.id}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ latitude, longitude })
+            await updateDoc(doc(db, 'users', parsedUser.id), {
+              latitude,
+              longitude,
+              last_active_at: serverTimestamp()
             });
           } catch (error) {
             console.error('Error updating location:', error);
@@ -117,44 +161,19 @@ export const HomePage: React.FC = () => {
     }
 
     return () => {
-      clearInterval(interval);
+      unsubUser();
+      unsubBooks();
+      unsubCats();
+      unsubSettings();
+      unsubNotif();
       clearInterval(pingInterval);
-      clearInterval(notifInterval);
     };
   }, []);
-
-  const fetchNotifications = async (userId?: number) => {
-    const id = userId || user?.id;
-    if (!id) return;
-    try {
-      const res = await fetch(`/api/notifications?userId=${id}`);
-      const data = await res.json();
-      setNotifications(data);
-      
-      // Calculate unread count based on last seen (stored in localStorage)
-      const lastSeenId = parseInt(localStorage.getItem('lastSeenNotificationId') || '0');
-      const unread = data.filter((n: any) => n.id > lastSeenId).length;
-      setUnreadCount(unread);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    }
-  };
-
-  const fetchCategories = async () => {
-    try {
-      const res = await fetch('/api/categories');
-      const data = await res.json();
-      setCategories(data.categories);
-      setLockAllCategories(data.lockAll);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-    }
-  };
 
   const handleOpenNotifications = () => {
     setShowNotifications(true);
     if (notifications.length > 0) {
-      const maxId = Math.max(...notifications.map((n: any) => n.id));
+      const maxId = notifications[0].id;
       localStorage.setItem('lastSeenNotificationId', maxId.toString());
       setUnreadCount(0);
     }
@@ -196,25 +215,24 @@ export const HomePage: React.FC = () => {
     }
   };
 
-  const handleSendReply = async (notificationId: number, reply: string) => {
+  const handleSendReply = async (notificationId: string, reply: string) => {
     if (!reply.trim() || !user) return;
     try {
-      const res = await fetch(`/api/notifications/${notificationId}/replies`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, username: user.fullName || user.username, reply }),
+      await addDoc(collection(db, 'notification_replies'), {
+        notification_id: notificationId,
+        user_id: user.id,
+        username: user.fullName || user.username,
+        reply,
+        created_at: serverTimestamp()
       });
-      if (res.ok) {
-        fetchNotifications();
-        return true;
-      }
+      return true;
     } catch (error) {
       console.error('Error sending reply:', error);
     }
     return false;
   };
 
-  const NotificationItem: React.FC<{ notif: any, onReply: (id: number, reply: string) => Promise<boolean> }> = ({ notif, onReply }) => {
+  const NotificationItem: React.FC<{ notif: any, onReply: (id: string, reply: string) => Promise<boolean> }> = ({ notif, onReply }) => {
     const [replies, setReplies] = useState<any[]>([]);
     const [replyText, setReplyText] = useState('');
     const [showReplies, setShowReplies] = useState(false);
@@ -222,15 +240,17 @@ export const HomePage: React.FC = () => {
 
     useEffect(() => {
       if (showReplies) {
-        fetchReplies();
+        const q = query(
+          collection(db, 'notification_replies'), 
+          where('notification_id', '==', notif.id),
+          orderBy('created_at', 'asc')
+        );
+        const unsub = onSnapshot(q, (snapshot) => {
+          setReplies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        });
+        return unsub;
       }
     }, [showReplies]);
-
-    const fetchReplies = async () => {
-      const res = await fetch(`/api/notifications/${notif.id}/replies`);
-      const data = await res.json();
-      setReplies(data);
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -239,7 +259,6 @@ export const HomePage: React.FC = () => {
       const success = await onReply(notif.id, replyText);
       if (success) {
         setReplyText('');
-        fetchReplies();
       }
       setIsSending(false);
     };
@@ -305,19 +324,6 @@ export const HomePage: React.FC = () => {
         )}
       </div>
     );
-  };
-
-  const fetchSettings = async () => {
-    const res = await fetch('/api/settings');
-    const data = await res.json();
-    setHomeText(data.home_text || '');
-    setHomeFontSize(parseInt(data.home_font_size) || 16);
-  };
-
-  const fetchBooks = async () => {
-    const res = await fetch('/api/books');
-    const data = await res.json();
-    setBooks(data);
   };
 
   const handleLogout = () => {

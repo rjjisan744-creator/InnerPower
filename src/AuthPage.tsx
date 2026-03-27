@@ -4,6 +4,26 @@ import { useApp } from './AppContext';
 import { LogIn, UserPlus, Shield, FileText, X, MessageSquare, Phone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SupportContactModal } from './components/SupportContactModal';
+import { auth, db } from './firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  updateProfile
+} from 'firebase/auth';
+import { 
+  doc, 
+  setDoc, 
+  getDoc, 
+  collection, 
+  query, 
+  where, 
+  getDocs,
+  limit,
+  updateDoc,
+  serverTimestamp,
+  increment,
+  runTransaction
+} from 'firebase/firestore';
 
 export const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(() => {
@@ -46,10 +66,20 @@ export const AuthPage: React.FC = () => {
     const timer = setTimeout(async () => {
       setIsCheckingUsername(true);
       try {
-        const res = await fetch(`/api/auth/check-username?username=${encodeURIComponent(username)}`);
-        const data = await res.json();
-        setIsUsernameAvailable(data.available);
-        setUsernameSuggestions(data.suggestions || []);
+        const q = query(collection(db, "users"), where("username", "==", username), limit(1));
+        const querySnapshot = await getDocs(q);
+        setIsUsernameAvailable(querySnapshot.empty);
+        
+        if (!querySnapshot.empty) {
+          const suggestions = [
+            `${username}${Math.floor(Math.random() * 100)}`,
+            `${username}_pro`,
+            `${username}${new Date().getFullYear()}`
+          ];
+          setUsernameSuggestions(suggestions);
+        } else {
+          setUsernameSuggestions([]);
+        }
       } catch (err) {
         console.error("Error checking username:", err);
       } finally {
@@ -61,12 +91,19 @@ export const AuthPage: React.FC = () => {
   }, [username, isLogin]);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
-      .then(data => {
-        setAuthText(data.auth_text || '');
-        setSmsSupportNumber(data.sms_support_number || '');
-      });
+    const fetchSettings = async () => {
+      try {
+        const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
+        if (settingsDoc.exists()) {
+          const data = settingsDoc.data();
+          setAuthText(data.auth_text || '');
+          setSmsSupportNumber(data.sms_support_number || '');
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+      }
+    };
+    fetchSettings();
   }, []);
 
   const getDeviceId = () => {
@@ -86,6 +123,11 @@ export const AuthPage: React.FC = () => {
       setError("সব ঘর পূরণ করুন");
       return;
     }
+
+    if (password.length < 6) {
+      setError("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে");
+      return;
+    }
     
     if (!isLogin && isUsernameAvailable === false) {
       setError("দয়া করে একটি এভেইলেবল ইউজারনেম পছন্দ করুন");
@@ -93,41 +135,116 @@ export const AuthPage: React.FC = () => {
     }
     
     const deviceId = getDeviceId();
-    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          username, 
-          password, 
-          deviceId,
-          referralCode: !isLogin ? referralCode : undefined 
-        }),
-      });
-      
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("সার্ভার থেকে ভুল রেসপন্স এসেছে। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।");
-      }
+    const email = `${username.toLowerCase()}@innerpower.app`;
 
-      const data = await res.json();
-      
-      if (data.success) {
-        localStorage.setItem('has_registered', 'true');
-        if (isLogin) {
-          localStorage.setItem('user', JSON.stringify(data.user));
-          navigate('/');
-        } else {
-          setIsLogin(true);
-          setError('Registration successful. Please login.');
+    try {
+      if (isLogin) {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+        
+        if (!userDoc.exists()) {
+          throw new Error("ইউজার ডাটা পাওয়া যায়নি।");
         }
+
+        const userData = userDoc.data();
+        
+        // Update device ID and last login
+        await updateDoc(doc(db, 'users', userCredential.user.uid), {
+          device_id: deviceId,
+          last_login_at: serverTimestamp(),
+          last_active_at: serverTimestamp()
+        });
+
+        const now = new Date();
+        const trialEnds = userData.trial_ends_at ? new Date(userData.trial_ends_at) : new Date(0);
+        const isTrialExpired = now > trialEnds;
+
+        const userObj = {
+          id: userCredential.user.uid,
+          username: userData.username,
+          role: userData.role,
+          status: userData.status,
+          isPaid: !!userData.is_paid,
+          isTrialExpired,
+          trialEndsAt: userData.trial_ends_at,
+          fullName: userData.full_name,
+          email: userData.email,
+          profilePicture: userData.profile_picture,
+          referralCode: userData.referral_code,
+          referralCount: userData.referral_count,
+          referredBy: userData.referred_by,
+          notes: userData.notes
+        };
+
+        localStorage.setItem('user', JSON.stringify(userObj));
+        localStorage.setItem('has_registered', 'true');
+        navigate('/');
       } else {
-        setError(data.message || data.error);
+        // Register
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const trialEnds = new Date();
+        trialEnds.setDate(trialEnds.getDate() + 3);
+        
+        const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        
+        const userData = {
+          username,
+          role: 'user',
+          status: 'pending',
+          is_paid: false,
+          device_id: deviceId,
+          created_at: serverTimestamp(),
+          trial_ends_at: trialEnds.toISOString(),
+          referral_code: myReferralCode,
+          referral_count: 0,
+          referred_by: null
+        };
+
+        await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+
+        // Handle referral
+        if (referralCode) {
+          const q = query(collection(db, "users"), where("referral_code", "==", referralCode));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const referrerDoc = querySnapshot.docs[0];
+            const referrerData = referrerDoc.data();
+            
+            if (referrerData.referral_count < 10) {
+              await runTransaction(db, async (transaction) => {
+                transaction.update(doc(db, 'users', referrerDoc.id), {
+                  referral_count: increment(1)
+                });
+                
+                const referralRef = doc(collection(db, 'referrals'));
+                transaction.set(referralRef, {
+                  referrer_id: referrerDoc.id,
+                  referee_id: userCredential.user.uid,
+                  bonus_granted: false,
+                  created_at: serverTimestamp()
+                });
+
+                transaction.update(doc(db, 'users', userCredential.user.uid), {
+                  referred_by: referrerDoc.id,
+                  trial_ends_at: new Date(new Date().setDate(new Date().getDate() + 6)).toISOString()
+                });
+              });
+            }
+          }
+        }
+
+        localStorage.setItem('has_registered', 'true');
+        setIsLogin(true);
+        setError('Registration successful. Please login.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Auth error:", err);
-      setError(err instanceof Error ? err.message : "সার্ভারের সাথে সংযোগ করা যাচ্ছে না। আপনার ইন্টারনেট কানেকশন চেক করুন।");
+      let message = "সার্ভারের সাথে সংযোগ করা যাচ্ছে না।";
+      if (err.code === 'auth/user-not-found') message = "এই ইউজার দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি।";
+      if (err.code === 'auth/wrong-password') message = "আপনার পাসওয়ার্ডটি ভুল।";
+      if (err.code === 'auth/email-already-in-use') message = "এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে।";
+      setError(err.message || message);
     }
   };
 
@@ -135,29 +252,42 @@ export const AuthPage: React.FC = () => {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
 
-  const handleAdminAccess = (e: React.FormEvent) => {
+  const handleAdminAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminEmail === 'jisanjisan744@gmail.com' && adminPassword === '445566') {
-      fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'jisanjisan744@gmail.com', password: '445566' }),
-      }).then(async res => {
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          return res.json();
-        }
-        throw new Error("সার্ভার থেকে ভুল রেসপন্স এসেছে।");
-      }).then(data => {
-        if (data.success) {
-          localStorage.setItem('user', JSON.stringify(data.user));
+    if (adminEmail === 'rjjisan744@gmail.com' && adminPassword === '445566') {
+      const email = 'rjjisan744@gmail.com';
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, adminPassword);
+        const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+        
+        if (userDoc.exists()) {
+          localStorage.setItem('user', JSON.stringify({
+            id: userCredential.user.uid,
+            ...userDoc.data()
+          }));
+          navigate('/admin');
+        } else {
+          // If user doc doesn't exist, create it as admin
+          const adminData = {
+            username: 'admin',
+            role: 'admin',
+            status: 'active',
+            is_paid: true,
+            created_at: serverTimestamp(),
+            email: email
+          };
+          await setDoc(doc(db, 'users', userCredential.user.uid), adminData);
+          localStorage.setItem('user', JSON.stringify({
+            id: userCredential.user.uid,
+            ...adminData
+          }));
           navigate('/admin');
         }
-      }).catch(err => {
+      } catch (err: any) {
         console.error("Admin access error:", err);
-        setError(err.message);
+        setError("সার্ভার থেকে ভুল রেসপন্স এসেছে।");
         setShowErrorDialog(true);
-      });
+      }
     } else {
       setError('ভুল জিমেইল বা পাসওয়ার্ড!');
       setAdminPassword('');

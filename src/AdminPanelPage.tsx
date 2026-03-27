@@ -5,6 +5,8 @@ import { CATEGORIES } from './constants';
 import { User, Book, Category, Note } from './types';
 import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { db, auth } from './firebase';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
 
 export const AdminPanelPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -85,43 +87,107 @@ export const AdminPanelPage: React.FC = () => {
   const [isSendingNotif, setIsSendingNotif] = useState(false);
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.role !== 'admin') {
-      navigate('/');
-      return;
-    }
-    fetchUsers();
-    fetchBooks();
-    fetchDeletedBooks();
-    fetchSettings();
-    fetchReferrals();
-    fetchNotifications();
-    fetchCategories();
-    fetchSubscriptions();
-    fetchSupportMessages();
+    const checkAdmin = async () => {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        navigate('/');
+        return;
+      }
+      const user = JSON.parse(userStr);
+      if (user.role !== 'admin') {
+        navigate('/');
+        return;
+      }
+    };
+    checkAdmin();
+
+    // Real-time listeners
+    const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc")), (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as User));
+      setUsers(data.filter(u => u.role !== 'admin'));
+    });
+
+    const unsubBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", false), orderBy("sort_index", "asc")), (snap) => {
+      setBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
+    });
+
+    const unsubDeletedBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", true)), (snap) => {
+      setDeletedBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
+    });
+
+    const unsubCategories = onSnapshot(query(collection(db, "categories"), orderBy("sort_index", "asc")), (snap) => {
+      setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Category)));
+    });
+
+    const unsubNotifications = onSnapshot(query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(100)), (snap) => {
+      setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const unsubSubscriptions = onSnapshot(query(collection(db, "subscriptions"), orderBy("created_at", "desc")), (snap) => {
+      setSubscriptions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const unsubSupport = onSnapshot(query(collection(db, "support_messages"), orderBy("created_at", "desc")), (snap) => {
+      const messages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      // Group by user for the list view
+      const userGroups: any = {};
+      messages.forEach((m: any) => {
+        if (!userGroups[m.user_id]) {
+          userGroups[m.user_id] = {
+            user_id: m.user_id,
+            username: m.username,
+            last_message: m.message,
+            last_message_at: m.created_at,
+            unread_count: messages.filter((msg: any) => msg.user_id === m.user_id && msg.status === 'unread' && msg.sender_role === 'user').length
+          };
+        }
+      });
+      setSupportMessages(Object.values(userGroups));
+    });
+
+    const unsubSettings = onSnapshot(collection(db, "settings"), (snap) => {
+      snap.forEach(doc => {
+        if (doc.id === 'home_text') setHomeText(doc.data().value);
+        if (doc.id === 'home_font_size') setHomeFontSize(Number(doc.data().value));
+        if (doc.id === 'auth_text') setAuthText(doc.data().value);
+        if (doc.id === 'lock_all_categories') setLockAllCategories(doc.data().value);
+      });
+    });
+
+    return () => {
+      unsubUsers();
+      unsubBooks();
+      unsubDeletedBooks();
+      unsubCategories();
+      unsubNotifications();
+      unsubSubscriptions();
+      unsubSupport();
+      unsubSettings();
+    };
   }, []);
 
-  const fetchSupportMessages = async () => {
-    try {
-      const res = await fetch('/api/admin/support/messages');
-      const data = await res.json();
-      setSupportMessages(data);
-    } catch (err) {
-      console.error("Error fetching support messages:", err);
-    }
+  const fetchChatMessages = (userId: number | string) => {
+    // This is now handled by the real-time listener if we want, 
+    // but for the specific chat view, we can set up a sub-listener
   };
 
-  const fetchChatMessages = async (userId: number | string) => {
-    try {
-      const res = await fetch(`/api/admin/support/messages/${userId}`);
-      const data = await res.json();
-      setChatMessages(data);
-      // Refresh user list to update unread counts
-      fetchSupportMessages();
-    } catch (err) {
-      console.error("Error fetching chat messages:", err);
+  useEffect(() => {
+    if (selectedChatUser) {
+      const q = query(collection(db, "support_messages"), where("user_id", "==", selectedChatUser.user_id), orderBy("created_at", "asc"));
+      const unsub = onSnapshot(q, (snap) => {
+        setChatMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        // Mark as read
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => {
+          if (d.data().status === 'unread' && d.data().sender_role === 'user') {
+            batch.update(d.ref, { status: 'read' });
+          }
+        });
+        batch.commit();
+      });
+      return () => unsub();
     }
-  };
+  }, [selectedChatUser]);
 
   const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,25 +198,16 @@ export const AdminPanelPage: React.FC = () => {
     setIsSendingReply(true);
 
     try {
-      const res = await fetch('/api/support/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: selectedChatUser.user_id,
-          username: selectedChatUser.username,
-          message: currentReply,
-          sender_role: 'admin'
-        }),
+      await addDoc(collection(db, "support_messages"), {
+        user_id: selectedChatUser.user_id,
+        username: selectedChatUser.username,
+        message: currentReply,
+        sender_role: 'admin',
+        status: 'read',
+        created_at: serverTimestamp()
       });
-
-      if (res.ok) {
-        fetchChatMessages(selectedChatUser.user_id);
-      } else {
-        showToast('রিপ্লাই পাঠানো যায়নি।', 'error');
-        setReplyMessage(currentReply);
-      }
     } catch (err) {
-      showToast('সার্ভার এরর!', 'error');
+      showToast('রিপ্লাই পাঠানো যায়নি।', 'error');
       setReplyMessage(currentReply);
     } finally {
       setIsSendingReply(false);
@@ -160,9 +217,12 @@ export const AdminPanelPage: React.FC = () => {
   const handleDeleteChat = async (userId: number | string) => {
     if (!confirm('Are you sure you want to delete this entire chat?')) return;
     try {
-      await fetch(`/api/admin/support/chat/${userId}`, { method: 'DELETE' });
+      const q = query(collection(db, "support_messages"), where("user_id", "==", userId));
+      const snap = await getDocs(q);
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
       setSelectedChatUser(null);
-      fetchSupportMessages();
       showToast('চ্যাট ডিলিট করা হয়েছে!');
     } catch (err) {
       console.error("Error deleting chat:", err);
@@ -170,33 +230,8 @@ export const AdminPanelPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selectedChatUser) {
-      const interval = setInterval(() => fetchChatMessages(selectedChatUser.user_id), 5000);
-      return () => clearInterval(interval);
-    }
-  }, [selectedChatUser]);
-
-  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
-
-  useEffect(() => {
-    if (activeTab === 'support') {
-      fetchSupportMessages();
-      const interval = setInterval(fetchSupportMessages, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [activeTab]);
-
-  const fetchSubscriptions = async () => {
-    try {
-      const res = await fetch('/api/admin/subscriptions');
-      const data = await res.json();
-      setSubscriptions(data);
-    } catch (error) {
-      console.error('Error fetching subscriptions:', error);
-    }
-  };
 
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [confirmConfig, setConfirmConfig] = useState<{ message: string, onConfirm: () => void } | null>(null);
@@ -210,79 +245,42 @@ export const AdminPanelPage: React.FC = () => {
     setConfirmConfig({ message, onConfirm });
   };
 
-  const fetchCategories = async () => {
-    try {
-      const res = await fetch('/api/categories');
-      const data = await res.json();
-      setCategories(data.categories);
-      setLockAllCategories(data.lockAll);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      const res = await fetch('/api/notifications?isAdmin=true');
-      const data = await res.json();
-      setNotifications(data);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    }
-  };
-
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCategoryName.trim()) return;
     setIsAddingCategory(true);
     try {
-      const res = await fetch('/api/admin/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCategoryName }),
+      await addDoc(collection(db, "categories"), {
+        name: newCategoryName,
+        is_locked: false,
+        sort_index: categories.length,
+        created_at: serverTimestamp()
       });
-      if (res.ok) {
-        setNewCategoryName('');
-        fetchCategories();
-        showToast('ক্যাটাগরি যোগ করা হয়েছে!');
-      } else {
-        const data = await res.json();
-        showToast(data.error || 'Failed to add category', 'error');
-      }
+      setNewCategoryName('');
+      showToast('ক্যাটাগরি যোগ করা হয়েছে!');
     } catch (error) {
       console.error('Error adding category:', error);
+      showToast('Failed to add category', 'error');
     } finally {
       setIsAddingCategory(false);
     }
   };
 
-  const handleUpdateCategory = async (id: number, updates: Partial<Category>) => {
+  const handleUpdateCategory = async (id: string, updates: Partial<Category>) => {
     try {
-      const res = await fetch(`/api/admin/categories/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        fetchCategories();
-        setEditingCategoryId(null);
-        setEditCategoryPassword('');
-      }
+      await updateDoc(doc(db, "categories", id), updates);
+      setEditingCategoryId(null);
+      setEditCategoryPassword('');
     } catch (error) {
       console.error('Error updating category:', error);
     }
   };
 
-  const handleDeleteCategory = async (id: number) => {
+  const handleDeleteCategory = async (id: string) => {
     handleConfirm('Are you sure you want to delete this category?', async () => {
       try {
-        const res = await fetch(`/api/admin/categories/${id}`, {
-          method: 'DELETE',
-        });
-        if (res.ok) {
-          fetchCategories();
-          showToast('ক্যাটাগরি ডিলিট করা হয়েছে!');
-        }
+        await deleteDoc(doc(db, "categories", id));
+        showToast('ক্যাটাগরি ডিলিট করা হয়েছে!');
       } catch (error) {
         console.error('Error deleting category:', error);
       }
@@ -291,14 +289,8 @@ export const AdminPanelPage: React.FC = () => {
 
   const handleToggleLockAll = async (lock: boolean) => {
     try {
-      const res = await fetch('/api/admin/settings/lock-categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lockAll: lock }),
-      });
-      if (res.ok) {
-        setLockAllCategories(lock);
-      }
+      await setDoc(doc(db, "settings", "lock_all_categories"), { value: lock });
+      setLockAllCategories(lock);
     } catch (error) {
       console.error('Error toggling lock all:', error);
     }
@@ -310,23 +302,17 @@ export const AdminPanelPage: React.FC = () => {
 
     setIsSendingNotif(true);
     try {
-      const res = await fetch('/api/admin/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          title: notifTitle, 
-          message: notifMessage, 
-          type: notifType,
-          userId: notifUserId 
-        }),
+      await addDoc(collection(db, "notifications"), {
+        title: notifTitle,
+        message: notifMessage,
+        type: notifType,
+        user_id: notifUserId || null,
+        created_at: serverTimestamp()
       });
-      if (res.ok) {
-        showToast('নোটিফিকেশন পাঠানো হয়েছে!');
-        setNotifTitle('');
-        setNotifMessage('');
-        setNotifUserId(null);
-        fetchNotifications();
-      }
+      showToast('নোটিফিকেশন পাঠানো হয়েছে!');
+      setNotifTitle('');
+      setNotifMessage('');
+      setNotifUserId(null);
     } catch (error) {
       console.error('Error sending notification:', error);
     } finally {
@@ -334,35 +320,30 @@ export const AdminPanelPage: React.FC = () => {
     }
   };
 
-  const handleDeleteNotification = async (id: number) => {
+  const handleDeleteNotification = async (id: string) => {
     handleConfirm('আপনি কি নিশ্চিতভাবে এই নোটিফিকেশনটি ডিলিট করতে চান?', async () => {
       try {
-        const res = await fetch(`/api/admin/notifications/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          fetchNotifications();
-          showToast('নোটিফিকেশন ডিলিট করা হয়েছে!');
-        }
+        await deleteDoc(doc(db, "notifications", id));
+        showToast('নোটিফিকেশন ডিলিট করা হয়েছে!');
       } catch (error) {
         console.error('Error deleting notification:', error);
       }
     });
   };
 
-  const AdminNotificationItem: React.FC<{ notif: any, onDelete: (id: number) => void }> = ({ notif, onDelete }) => {
+  const AdminNotificationItem: React.FC<{ notif: any, onDelete: (id: string) => void }> = ({ notif, onDelete }) => {
     const [replies, setReplies] = useState<any[]>([]);
     const [showReplies, setShowReplies] = useState(false);
 
     useEffect(() => {
       if (showReplies) {
-        fetchReplies();
+        const q = query(collection(db, "notification_replies"), where("notification_id", "==", notif.id), orderBy("created_at", "asc"));
+        const unsub = onSnapshot(q, (snap) => {
+          setReplies(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        });
+        return () => unsub();
       }
     }, [showReplies]);
-
-    const fetchReplies = async () => {
-      const res = await fetch(`/api/notifications/${notif.id}/replies`);
-      const data = await res.json();
-      setReplies(data);
-    };
 
     return (
       <div className="p-4 flex flex-col hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
@@ -432,55 +413,6 @@ export const AdminPanelPage: React.FC = () => {
     );
   };
 
-  const fetchReferrals = async () => {
-    try {
-      const res = await fetch('/api/admin/referrals');
-      const data = await res.json();
-      setReferrals(data);
-    } catch (error) {
-      console.error('Error fetching referrals:', error);
-    }
-  };
-
-  const fetchSettings = async () => {
-    const res = await fetch('/api/settings');
-    const data = await res.json();
-    setHomeText(data.home_text || '');
-    setHomeFontSize(parseInt(data.home_font_size) || 16);
-    setAuthText(data.auth_text || '');
-    setSmsSupportNumber(data.sms_support_number || '');
-  };
-
-  const fetchUsers = async () => {
-    const res = await fetch('/api/admin/users');
-    const data = await res.json();
-    const mappedUsers = data.map((u: any) => ({
-      ...u,
-      isPaid: !!u.is_paid,
-      fullName: u.full_name,
-      profilePicture: u.profile_picture,
-      trialEndsAt: u.trial_ends_at,
-      last_login_at: u.last_login_at,
-      last_active_at: u.last_active_at,
-      latitude: u.latitude,
-      longitude: u.longitude,
-      location_name: u.location_name
-    }));
-    setUsers(mappedUsers);
-  };
-
-  const fetchBooks = async () => {
-    const res = await fetch('/api/books');
-    const data = await res.json();
-    setBooks(data);
-  };
-
-  const fetchDeletedBooks = async () => {
-    const res = await fetch('/api/admin/books/deleted');
-    const data = await res.json();
-    setDeletedBooks(data);
-  };
-
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -494,21 +426,21 @@ export const AdminPanelPage: React.FC = () => {
     }
   };
 
-  const handleUserStatus = async (userId: number, status: string) => {
-    await fetch('/api/admin/users/status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, status }),
-    });
-    fetchUsers();
+  const handleUserStatus = async (userId: string, status: string) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { status });
+      showToast('ইউজার স্ট্যাটাস আপডেট করা হয়েছে!');
+    } catch (error) {
+      console.error('Error updating user status:', error);
+    }
   };
 
-  const fetchUserNotes = async (userId: number) => {
+  const fetchUserNotes = async (userId: string) => {
     setLoadingNotes(true);
     try {
-      const res = await fetch(`/api/users/${userId}/all-notes`);
-      const data = await res.json();
-      setUserNotes(data);
+      const q = query(collection(db, "user_notes"), where("user_id", "==", userId), orderBy("updated_at", "desc"));
+      const snap = await getDocs(q);
+      setUserNotes(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Note)));
       setShowNotesModal(true);
     } catch (error) {
       console.error("Failed to fetch notes");
@@ -517,7 +449,7 @@ export const AdminPanelPage: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = async (userId: number) => {
+  const handleDeleteUser = async (userId: string) => {
     if (userDeleteConfirmId !== userId) {
       setUserDeleteConfirmId(userId);
       setTimeout(() => setUserDeleteConfirmId(null), 3000);
@@ -525,11 +457,9 @@ export const AdminPanelPage: React.FC = () => {
     }
 
     try {
-      const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchUsers();
-        setUserDeleteConfirmId(null);
-      }
+      await deleteDoc(doc(db, "users", userId));
+      setUserDeleteConfirmId(null);
+      showToast('ইউজার ডিলিট করা হয়েছে!');
     } catch (error) {
       console.error('Error deleting user:', error);
     }
@@ -538,85 +468,86 @@ export const AdminPanelPage: React.FC = () => {
   const handleUpdatePassword = async () => {
     if (!editingPasswordUserId || !newPassword.trim()) return;
     
-    const res = await fetch('/api/admin/users/password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: editingPasswordUserId, password: newPassword.trim() }),
-    });
-
-    if (res.ok) {
+    try {
+      await updateDoc(doc(db, "users", String(editingPasswordUserId)), { password: newPassword.trim() });
       showToast('পাসওয়ার্ড আপডেট হয়েছে!');
       setEditingPasswordUserId(null);
       setNewPassword('');
-      fetchUsers();
+    } catch (error) {
+      console.error('Error updating password:', error);
     }
   };
 
   const handleUpdateOrder = async () => {
     if (!editingOrderBookId) return;
     
-    const res = await fetch('/api/admin/books/order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookId: editingOrderBookId, index: newOrderIndex }),
-    });
-
-    if (res.ok) {
+    try {
+      await updateDoc(doc(db, "books", String(editingOrderBookId)), { sort_index: newOrderIndex });
       showToast('সিরিয়াল আপডেট হয়েছে!');
       setEditingOrderBookId(null);
-      fetchBooks();
+    } catch (error) {
+      console.error('Error updating order:', error);
     }
   };
 
-  const handleUpdateTrial = async (userId: number) => {
+  const handleUpdateTrial = async (userId: string) => {
     if (!newTrialDate) return;
     try {
-      const res = await fetch('/api/admin/users/trial', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, trialEndsAt: new Date(newTrialDate).toISOString() }),
-      });
-      if (res.ok) {
-        showToast('মেয়াদ আপডেট হয়েছে!');
-        setEditingTrialUserId(null);
-        fetchUsers();
-      }
+      await updateDoc(doc(db, "users", userId), { trial_ends_at: new Date(newTrialDate).toISOString() });
+      showToast('মেয়াদ আপডেট হয়েছে!');
+      setEditingTrialUserId(null);
     } catch (error) {
       console.error('Error updating trial date:', error);
     }
   };
 
-  const handleApproveSubscription = async (subId: number, userId: number) => {
+  const handleApproveSubscription = async (subId: string, userId: string) => {
     handleConfirm('আপনি কি নিশ্চিতভাবে এই সাবস্ক্রিপশনটি এপ্রুভ করতে চান?', async () => {
       try {
-        const res = await fetch('/api/admin/subscriptions/approve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subscriptionId: subId, userId }),
+        await runTransaction(db, async (transaction) => {
+          const subRef = doc(db, "subscriptions", subId);
+          const userRef = doc(db, "users", userId);
+          
+          transaction.update(subRef, { status: 'approved' });
+          
+          const now = new Date();
+          const nextYear = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+          
+          transaction.update(userRef, { 
+            is_paid: true, 
+            status: 'active', 
+            trial_ends_at: nextYear.toISOString() 
+          });
+
+          const notifRef = doc(collection(db, "notifications"));
+          transaction.set(notifRef, {
+            user_id: userId,
+            title: "সাবস্ক্রিপশন সফল!",
+            message: "আপনার ১ বছরের সাবস্ক্রিপশন সফলভাবে একটিভ করা হয়েছে। ধন্যবাদ!",
+            type: "success",
+            created_at: serverTimestamp()
+          });
         });
-        if (res.ok) {
-          showToast('সাবস্ক্রিপশন এপ্রুভ হয়েছে!');
-          fetchSubscriptions();
-          fetchUsers();
-        }
+        showToast('সাবস্ক্রিপশন এপ্রুভ হয়েছে!');
       } catch (error) {
         console.error('Error approving subscription:', error);
+        showToast('Failed to approve subscription', 'error');
       }
     });
   };
 
-  const handleRejectSubscription = async (subId: number, userId: number) => {
+  const handleRejectSubscription = async (subId: string, userId: string) => {
     handleConfirm('আপনি কি নিশ্চিতভাবে এই সাবস্ক্রিপশনটি রিজেক্ট করতে চান?', async () => {
       try {
-        const res = await fetch('/api/admin/subscriptions/reject', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subscriptionId: subId, userId }),
+        await updateDoc(doc(db, "subscriptions", subId), { status: 'rejected' });
+        await addDoc(collection(db, "notifications"), {
+          user_id: userId,
+          title: "পেমেন্ট রিজেক্ট করা হয়েছে",
+          message: "আপনার পেমেন্ট রিকোয়েস্টটি সঠিক না হওয়ায় রিজেক্ট করা হয়েছে। দয়া করে সঠিক তথ্য দিয়ে পুনরায় চেষ্টা করুন।",
+          type: "error",
+          created_at: serverTimestamp()
         });
-        if (res.ok) {
-          showToast('সাবস্ক্রিপশন রিজেক্ট হয়েছে!');
-          fetchSubscriptions();
-        }
+        showToast('সাবস্ক্রিপশন রিজেক্ট হয়েছে!');
       } catch (error) {
         console.error('Error rejecting subscription:', error);
       }
@@ -630,72 +561,67 @@ export const AdminPanelPage: React.FC = () => {
       return;
     }
 
-    const endpoint = editingBookId ? `/api/admin/books/${editingBookId}` : '/api/admin/books';
-    const method = editingBookId ? 'PUT' : 'POST';
-
     const finalCategory = category.includes('New book') ? category : `New book, ${category}`;
+    const bookData = {
+      title,
+      author,
+      cover_url: coverUrl,
+      pdf_url: pdfUrl,
+      category: finalCategory,
+      content: JSON.stringify(pages.filter(p => p.trim() !== '')),
+      description: description,
+      is_deleted: false,
+      sort_index: editingBookId ? books.find(b => b.id === editingBookId)?.sort_index || 0 : books.length,
+      created_at: serverTimestamp()
+    };
 
-    const res = await fetch(endpoint, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        title, 
-        author, 
-        cover_url: coverUrl, 
-        pdf_url: pdfUrl,
-        category: finalCategory,
-        content: JSON.stringify(pages.filter(p => p.trim() !== '')), 
-        description: description
-      }),
-    });
-
-    if (res.ok) {
-      showToast(editingBookId ? 'বইটি আপডেট করা হয়েছে!' : 'বইটি সফলভাবে যোগ করা হয়েছে!');
+    try {
+      if (editingBookId) {
+        await updateDoc(doc(db, "books", String(editingBookId)), bookData);
+        showToast('বইটি আপডেট করা হয়েছে!');
+      } else {
+        await addDoc(collection(db, "books"), bookData);
+        showToast('বইটি সফলভাবে যোগ করা হয়েছে!');
+      }
       resetForm();
-      fetchBooks();
+    } catch (error) {
+      console.error('Error saving book:', error);
+      showToast('Failed to save book', 'error');
     }
   };
 
   const handleUpdateSettings = async () => {
-    const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        home_text: homeText, 
-        home_font_size: homeFontSize, 
-        auth_text: authText,
-        sms_support_number: smsSupportNumber
-      }),
-    });
-    if (res.ok) {
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, "settings", "home_text"), { value: homeText });
+      batch.set(doc(db, "settings", "home_font_size"), { value: homeFontSize.toString() });
+      batch.set(doc(db, "settings", "auth_text"), { value: authText });
+      batch.set(doc(db, "settings", "sms_support_number"), { value: smsSupportNumber });
+      await batch.commit();
       showToast('সেটিংস আপডেট করা হয়েছে!');
+    } catch (error) {
+      console.error('Error updating settings:', error);
     }
   };
 
-  const copyToClipboard = (text: string, id: number) => {
+  const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
-    setCopiedId(id);
+    setCopiedId(id as any);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleDeleteBook = async (book: Book) => {
     if (deleteConfirmId !== book.id) {
-      setDeleteConfirmId(book.id);
+      setDeleteConfirmId(book.id as any);
       setTimeout(() => setDeleteConfirmId(null), 3000);
       return;
     }
 
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/admin/books/${book.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchBooks();
-        fetchDeletedBooks();
-        setDeleteConfirmId(null);
-      } else {
-        const data = await res.json();
-        console.error('Failed to delete book:', data);
-      }
+      await updateDoc(doc(db, "books", String(book.id)), { is_deleted: true });
+      setDeleteConfirmId(null);
+      showToast('বইটি রিসাইকেল বিনে পাঠানো হয়েছে!');
     } catch (error) {
       console.error('Error deleting book:', error);
     } finally {
@@ -703,42 +629,34 @@ export const AdminPanelPage: React.FC = () => {
     }
   };
 
-  const handleRestoreBook = async (id: number) => {
+  const handleRestoreBook = async (id: string) => {
     if (restoreConfirmId !== id) {
-      setRestoreConfirmId(id);
+      setRestoreConfirmId(id as any);
       setTimeout(() => setRestoreConfirmId(null), 3000);
       return;
     }
 
     try {
-      const res = await fetch(`/api/admin/books/${id}/restore`, { method: 'POST' });
-      if (res.ok) {
-        fetchBooks();
-        fetchDeletedBooks();
-        setRestoreConfirmId(null);
-      }
+      await updateDoc(doc(db, "books", id), { is_deleted: false });
+      setRestoreConfirmId(null);
+      showToast('বইটি রিস্টোর করা হয়েছে!');
     } catch (error) {
       console.error('Error restoring book:', error);
     }
   };
 
-  const handlePermanentDeleteBook = async (id: number) => {
+  const handlePermanentDeleteBook = async (id: string) => {
     if (permDeleteConfirmId !== id) {
-      setPermDeleteConfirmId(id);
+      setPermDeleteConfirmId(id as any);
       setTimeout(() => setPermDeleteConfirmId(null), 3000);
       return;
     }
 
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/admin/books/${id}/permanent`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchDeletedBooks();
-        setPermDeleteConfirmId(null);
-      } else {
-        const data = await res.json();
-        console.error('Failed to permanently delete book:', data);
-      }
+      await deleteDoc(doc(db, "books", id));
+      setPermDeleteConfirmId(null);
+      showToast('বইটি চিরতরে ডিলিট করা হয়েছে!');
     } catch (error) {
       console.error('Error permanently deleting book:', error);
     } finally {
@@ -747,7 +665,7 @@ export const AdminPanelPage: React.FC = () => {
   };
 
   const handleEditBook = (book: Book) => {
-    setEditingBookId(book.id);
+    setEditingBookId(book.id as any);
     setTitle(book.title);
     setAuthor(book.author || '');
     setCoverUrl(book.cover_url);
@@ -1220,15 +1138,9 @@ export const AdminPanelPage: React.FC = () => {
                                         oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
                                         const isoDate = oneYearFromNow.toISOString();
                                         try {
-                                          const res = await fetch('/api/admin/users/trial', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ userId: user.id, trialEndsAt: isoDate }),
-                                          });
-                                          if (res.ok) {
-                                            setEditingTrialUserId(null);
-                                            fetchUsers();
-                                          }
+                                          await updateDoc(doc(db, "users", String(user.id)), { trial_ends_at: isoDate });
+                                          setEditingTrialUserId(null);
+                                          showToast('মেয়াদ ১ বছর বাড়ানো হয়েছে!');
                                         } catch (error) {
                                           console.error('Error auto-updating trial:', error);
                                         }
