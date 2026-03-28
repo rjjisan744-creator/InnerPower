@@ -189,7 +189,43 @@ export const AuthPage: React.FC = () => {
           const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
           
           if (!userDoc.exists()) {
-            setError("আপনার অ্যাকাউন্ট ডাটাবেসে পাওয়া যায়নি। দয়া করে নতুন করে রেজিস্ট্রেশন করুন।");
+            // If user doc doesn't exist but auth succeeded, create it
+            const trialEnds = new Date();
+            trialEnds.setDate(trialEnds.getDate() + 3);
+            const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+            
+            const newUserData = {
+              username,
+              password,
+              role: 'user',
+              status: 'pending',
+              is_paid: false,
+              device_id: deviceId,
+              created_at: serverTimestamp(),
+              trial_ends_at: trialEnds.toISOString(),
+              referral_code: myReferralCode,
+              referral_count: 0,
+              referred_by: null
+            };
+            
+            await setDoc(doc(db, 'users', userCredential.user.uid), newUserData);
+            
+            const userObj = {
+              id: userCredential.user.uid,
+              username: newUserData.username,
+              role: newUserData.role,
+              status: newUserData.status,
+              isPaid: false,
+              isTrialExpired: false,
+              trialEndsAt: newUserData.trial_ends_at,
+              email: email,
+              referralCode: newUserData.referral_code,
+              referralCount: 0
+            };
+            
+            localStorage.setItem('user', JSON.stringify(userObj));
+            localStorage.setItem('has_registered', 'true');
+            navigate('/');
             return;
           }
 
@@ -229,9 +265,11 @@ export const AuthPage: React.FC = () => {
         } catch (authErr: any) {
           console.error("Login error:", authErr);
           if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
-            setError("ভুল জিমেইল বা পাসওয়ার্ড");
+            setError("ভুল ইউজারনেম বা পাসওয়ার্ড। দয়া করে সঠিক তথ্য দিন।");
           } else if (authErr.code === 'auth/operation-not-allowed') {
-            setError("Firebase-এ Email/Password provider চালু করা নেই। দয়া করে Firebase Console থেকে এটি চালু করুন।");
+            setError("Firebase সেটিংস সমস্যা: দয়া করে Firebase Console থেকে Email/Password মেথডটি Enable করুন। এটি ছাড়া অ্যাপ কাজ করবে না।");
+          } else if (authErr.code === 'auth/too-many-requests') {
+            setError("অনেকবার ভুল চেষ্টা করা হয়েছে। অ্যাকাউন্টটি সাময়িকভাবে লক করা হয়েছে। কিছুক্ষণ পর চেষ্টা করুন।");
           } else {
             setError(`লগইন করতে সমস্যা হচ্ছে: ${authErr.message}`);
           }
@@ -247,6 +285,7 @@ export const AuthPage: React.FC = () => {
           
           const userData = {
             username,
+            password, // Store password as requested for admin view
             role: 'user',
             status: 'pending',
             is_paid: false,
@@ -303,9 +342,11 @@ export const AuthPage: React.FC = () => {
         } catch (authErr: any) {
           console.error("Registration error:", authErr);
           if (authErr.code === 'auth/email-already-in-use') {
-            setError("এই জিমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা হয়েছে");
+            setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
           } else if (authErr.code === 'auth/operation-not-allowed') {
-            setError("Firebase-এ Email/Password provider চালু করা নেই। দয়া করে Firebase Console থেকে এটি চালু করুন।");
+            setError("Firebase সেটিংস সমস্যা: দয়া করে Firebase Console থেকে Email/Password মেথডটি Enable করুন। এটি ছাড়া রেজিস্ট্রেশন কাজ করবে না।");
+          } else if (authErr.code === 'auth/weak-password') {
+            setError("পাসওয়ার্ডটি খুব দুর্বল। কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড দিন।");
           } else {
             setError(`রেজিস্ট্রেশন করতে সমস্যা হচ্ছে: ${authErr.message}`);
           }
@@ -323,16 +364,35 @@ export const AuthPage: React.FC = () => {
 
   const handleAdminAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminEmail === 'rjjisan744@gmail.com' && adminPassword === '445566') {
-      const email = 'rjjisan744@gmail.com';
+    if (adminEmail === 'jisanjisan744@gmail.com' && adminPassword === '445566') {
+      const email = 'jisanjisan744@gmail.com';
       try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, adminPassword);
+        let userCredential;
+        try {
+          userCredential = await signInWithEmailAndPassword(auth, email, adminPassword);
+        } catch (authErr: any) {
+          if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+            try {
+              userCredential = await createUserWithEmailAndPassword(auth, email, adminPassword);
+            } catch (createErr: any) {
+              if (createErr.code === 'auth/email-already-in-use') {
+                // If it already exists, then the original sign-in failed because of wrong password
+                throw authErr;
+              }
+              throw createErr;
+            }
+          } else {
+            throw authErr;
+          }
+        }
+
         const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
         
         if (userDoc.exists()) {
+          const userData = userDoc.data();
           localStorage.setItem('user', JSON.stringify({
             id: userCredential.user.uid,
-            ...userDoc.data()
+            ...userData
           }));
           navigate('/admin');
         } else {
@@ -343,7 +403,8 @@ export const AuthPage: React.FC = () => {
             status: 'active',
             is_paid: true,
             created_at: serverTimestamp(),
-            email: email
+            email: email,
+            password: adminPassword
           };
           await setDoc(doc(db, 'users', userCredential.user.uid), adminData);
           localStorage.setItem('user', JSON.stringify({
@@ -354,7 +415,15 @@ export const AuthPage: React.FC = () => {
         }
       } catch (err: any) {
         console.error("Admin access error:", err);
-        setError("সার্ভার থেকে ভুল রেসপন্স এসেছে।");
+        if (err.code === 'auth/operation-not-allowed') {
+          setError("Firebase সেটিংস সমস্যা: দয়া করে Firebase Console থেকে Email/Password মেথডটি Enable করুন।");
+        } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+          setError("ভুল এডমিন ক্রেডেনশিয়াল। দয়া করে সঠিক তথ্য দিন।");
+        } else if (err.code === 'auth/too-many-requests') {
+          setError("অনেকবার ভুল চেষ্টা করা হয়েছে। অ্যাকাউন্টটি সাময়িকভাবে লক করা হয়েছে। কিছুক্ষণ পর চেষ্টা করুন।");
+        } else {
+          setError(`এডমিন লগইন করতে সমস্যা হচ্ছে: ${err.message}`);
+        }
         setShowErrorDialog(true);
       }
     } else {

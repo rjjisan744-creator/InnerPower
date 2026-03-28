@@ -14,15 +14,18 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         request.auth.token.email == "rjjisan744@gmail.com" ||
-         request.auth.token.email == "jisanjisan744@gmail.com");
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          request.auth.token.email == "jisanjisan744@gmail.com"
+        );
     }
 
     function isValidUser(data) {
-      return data.keys().hasAll(['username', 'password']) &&
+      return data.keys().hasAll(['username', 'role', 'status']) &&
              data.username is string && data.username.size() > 0 &&
-             data.password is string && data.password.size() >= 6;
+             data.role in ['user', 'admin'] &&
+             data.status in ['pending', 'active', 'blocked'];
     }
 
     // ===============================================================
