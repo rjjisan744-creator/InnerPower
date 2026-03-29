@@ -99,6 +99,8 @@ export const AdminPanelPage: React.FC = () => {
     return isNaN(d.getTime()) ? new Date(0) : d;
   };
 
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
     const checkAdmin = async () => {
       const userStr = localStorage.getItem('user');
@@ -111,10 +113,12 @@ export const AdminPanelPage: React.FC = () => {
         navigate('/');
         return;
       }
+      setIsLoading(false);
     };
     checkAdmin();
 
     // Real-time listeners
+    if (isLoading) return;
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc")), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as User));
       setUsers(data.filter(u => u.role !== 'admin'));
@@ -182,7 +186,7 @@ export const AdminPanelPage: React.FC = () => {
       unsubSettings();
       unsubReferrals();
     };
-  }, []);
+  }, [isLoading, navigate]);
 
   const fetchChatMessages = (userId: number | string) => {
     // This is now handled by the real-time listener if we want, 
@@ -812,6 +816,14 @@ export const AdminPanelPage: React.FC = () => {
   );
   const filteredDeletedBooks = deletedBooks.filter(b => b.title.toLowerCase().includes(recycleSearch.toLowerCase()));
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 pb-20">
       <header className="bg-white dark:bg-zinc-900 border-b border-black/5 dark:border-white/5 p-3 sticky top-0 z-50 backdrop-blur-md bg-opacity-80">
@@ -903,7 +915,7 @@ export const AdminPanelPage: React.FC = () => {
                     placeholder="বই খুঁজুন..."
                     value={bookSearch}
                     onChange={(e) => setBookSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>
@@ -983,7 +995,7 @@ export const AdminPanelPage: React.FC = () => {
                       placeholder="সার্চ নাম বা ডিভাইস আইডি..."
                       value={userSearch}
                       onChange={(e) => setUserSearch(e.target.value)}
-                      className="w-full pl-12 pr-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all"
+                      className="w-full pl-12 pr-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-none text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all"
                     />
                   </div>
                   
@@ -1806,7 +1818,7 @@ export const AdminPanelPage: React.FC = () => {
                     onChange={(e) => setAuthText(e.target.value)}
                     rows={10}
                     placeholder="লগইন পেজের মোটিভেশনাল লেখা এখানে লিখুন..."
-                    className="w-full p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all resize-none font-medium"
+                    className="w-full p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all resize-none font-medium"
                   />
                 </div>
 
@@ -1817,7 +1829,7 @@ export const AdminPanelPage: React.FC = () => {
                     onChange={(e) => setHomeText(e.target.value)}
                     rows={6}
                     placeholder="মোটিভেশনাল লেখা এখানে লিখুন..."
-                    className="w-full p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all resize-none font-medium"
+                    className="w-full p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all resize-none font-medium"
                   />
                 </div>
 
@@ -1834,6 +1846,17 @@ export const AdminPanelPage: React.FC = () => {
                     value={homeFontSize}
                     onChange={(e) => setHomeFontSize(parseInt(e.target.value))}
                     className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-zinc-900 dark:accent-white"
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">SMS Support Number</label>
+                  <input
+                    type="text"
+                    value={smsSupportNumber}
+                    onChange={(e) => setSmsSupportNumber(e.target.value)}
+                    placeholder="যেমন: +8801700000000"
+                    className="w-full px-5 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all font-medium"
                   />
                 </div>
 
@@ -1931,7 +1954,7 @@ export const AdminPanelPage: React.FC = () => {
                   placeholder="রেফারার বা রেফার করা ইউজার খুঁজুন..."
                   value={referralSearch}
                   onChange={(e) => setReferralSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
             </div>
@@ -2207,7 +2230,7 @@ export const AdminPanelPage: React.FC = () => {
                             placeholder="বইয়ের নাম"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
                           />
                         </div>
                         <div className="relative">
@@ -2218,7 +2241,7 @@ export const AdminPanelPage: React.FC = () => {
                             placeholder="লেখকের নাম"
                             value={author}
                             onChange={(e) => setAuthor(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
                           />
                         </div>
                         <div className="relative">
@@ -2228,7 +2251,7 @@ export const AdminPanelPage: React.FC = () => {
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             rows={4}
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
                           />
                         </div>
                         <div className="relative">
@@ -2238,7 +2261,7 @@ export const AdminPanelPage: React.FC = () => {
                             placeholder="ফাইল লিঙ্ক (ঐচ্ছিক)"
                             value={pdfUrl}
                             onChange={(e) => setPdfUrl(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
                           />
                         </div>
                         <div className="relative">
@@ -2246,7 +2269,7 @@ export const AdminPanelPage: React.FC = () => {
                           <select
                             value={category}
                             onChange={(e) => setCategory(e.target.value)}
-                            className="w-full pl-4 pr-10 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold appearance-none"
+                            className="w-full pl-4 pr-10 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold appearance-none"
                           >
                             {categories.map(cat => (
                               <option key={cat.id} value={cat.name}>{cat.name}</option>
