@@ -86,6 +86,19 @@ export const AdminPanelPage: React.FC = () => {
   const [notifUserId, setNotifUserId] = useState<number | null>(null);
   const [isSendingNotif, setIsSendingNotif] = useState(false);
 
+  const safeDate = (date: any) => {
+    if (!date) return new Date(0);
+    if (date instanceof Date) return date;
+    if (date && typeof date === 'object' && 'seconds' in date) {
+      return new Date(date.seconds * 1000);
+    }
+    if (date && typeof date.toDate === 'function') {
+      return date.toDate();
+    }
+    const d = new Date(date);
+    return isNaN(d.getTime()) ? new Date(0) : d;
+  };
+
   useEffect(() => {
     const checkAdmin = async () => {
       const userStr = localStorage.getItem('user');
@@ -154,6 +167,10 @@ export const AdminPanelPage: React.FC = () => {
       });
     });
 
+    const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc")), (snap) => {
+      setReferrals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => {
       unsubUsers();
       unsubBooks();
@@ -163,6 +180,7 @@ export const AdminPanelPage: React.FC = () => {
       unsubSubscriptions();
       unsubSupport();
       unsubSettings();
+      unsubReferrals();
     };
   }, []);
 
@@ -359,7 +377,7 @@ export const AdminPanelPage: React.FC = () => {
               <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">{notif.message}</div>
               <div className="flex items-center gap-3 mt-2">
                 <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest">
-                  {new Date(notif.created_at).toLocaleString('en-GB')}
+                  {safeDate(notif.created_at).toLocaleString('en-GB')}
                 </div>
                 {notif.user_id ? (
                   <div className="text-[9px] px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-widest rounded-md">
@@ -398,7 +416,7 @@ export const AdminPanelPage: React.FC = () => {
                 <div key={reply.id} className="bg-zinc-100 dark:bg-zinc-800/50 p-3 rounded-xl">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{reply.username}</span>
-                    <span className="text-[8px] text-zinc-400">{new Date(reply.created_at).toLocaleString()}</span>
+                    <span className="text-[8px] text-zinc-400">{safeDate(reply.created_at).toLocaleString()}</span>
                   </div>
                   <div className="text-xs text-zinc-700 dark:text-zinc-300">{reply.reply}</div>
                 </div>
@@ -493,7 +511,7 @@ export const AdminPanelPage: React.FC = () => {
   const handleUpdateTrial = async (userId: string) => {
     if (!newTrialDate) return;
     try {
-      await updateDoc(doc(db, "users", userId), { trial_ends_at: new Date(newTrialDate).toISOString() });
+      await updateDoc(doc(db, "users", userId), { trial_ends_at: safeDate(newTrialDate).toISOString() });
       showToast('মেয়াদ আপডেট হয়েছে!');
       setEditingTrialUserId(null);
     } catch (error) {
@@ -754,26 +772,34 @@ export const AdminPanelPage: React.FC = () => {
     if (userStatusFilter === 'all') return true;
     if (userStatusFilter === 'online') {
       if (!u.last_active_at) return false;
-      const lastActive = new Date(u.last_active_at);
+      const lastActive = safeDate(u.last_active_at);
       const now = new Date();
       const diffMinutes = (now.getTime() - lastActive.getTime()) / (1000 * 60);
       return diffMinutes < 5; // Online if active in last 5 mins
     }
     if (userStatusFilter === 'offline') {
       if (!u.last_active_at) return true;
-      const lastActive = new Date(u.last_active_at);
+      const lastActive = safeDate(u.last_active_at);
       const now = new Date();
       const diffMinutes = (now.getTime() - lastActive.getTime()) / (1000 * 60);
       return diffMinutes >= 5; // Offline if not active in last 5 mins
     }
     if (userStatusFilter === 'expired') {
       if (!u.trialEndsAt) return false;
-      return new Date() > new Date(u.trialEndsAt);
+      return new Date() > safeDate(u.trialEndsAt);
     }
     return u.status === userStatusFilter;
   });
 
-  const filteredReferrals = referrals.filter(r => {
+  const filteredReferrals = referrals.map(r => {
+    const referrer = users.find(u => u.id === r.referrer_id);
+    const referee = users.find(u => u.id === r.referee_id);
+    return {
+      ...r,
+      referrer_username: referrer ? referrer.username : 'Unknown',
+      referee_username: referee ? referee.username : 'Unknown'
+    };
+  }).filter(r => {
     const query = referralSearch.toLowerCase();
     const referrer = (r.referrer_username || "").toLowerCase();
     const referee = (r.referee_username || "").toLowerCase();
@@ -900,7 +926,7 @@ export const AdminPanelPage: React.FC = () => {
                           {book.category?.split(', ').map(cat => (
                             <span key={cat} className="text-[9px] bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">{cat}</span>
                           ))}
-                          <span className="text-[8px] text-zinc-400 uppercase tracking-widest">Added on {new Date(book.created_at!).toLocaleDateString()}</span>
+                          <span className="text-[8px] text-zinc-400 uppercase tracking-widest">Added on {safeDate(book.created_at!).toLocaleDateString()}</span>
                         </div>
                       </div>
                     </div>
@@ -965,9 +991,9 @@ export const AdminPanelPage: React.FC = () => {
                   <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                     {[
                       { id: 'all', label: 'সব ইউজার', count: users.length, color: 'bg-zinc-500' },
-                      { id: 'online', label: 'অনলাইন', count: users.filter(u => u.last_active_at && (new Date().getTime() - new Date(u.last_active_at).getTime() < 300000)).length, color: 'bg-emerald-500' },
-                      { id: 'offline', label: 'অফলাইন', count: users.filter(u => !u.last_active_at || (new Date().getTime() - new Date(u.last_active_at).getTime() >= 300000)).length, color: 'bg-zinc-400' },
-                      { id: 'expired', label: 'মেয়াদ শেষ', count: users.filter(u => u.trialEndsAt && new Date() > new Date(u.trialEndsAt)).length, color: 'bg-orange-500' },
+                      { id: 'online', label: 'অনলাইন', count: users.filter(u => u.last_active_at && (new Date().getTime() - safeDate(u.last_active_at).getTime() < 300000)).length, color: 'bg-emerald-500' },
+                      { id: 'offline', label: 'অফলাইন', count: users.filter(u => !u.last_active_at || (new Date().getTime() - safeDate(u.last_active_at).getTime() >= 300000)).length, color: 'bg-zinc-400' },
+                      { id: 'expired', label: 'মেয়াদ শেষ', count: users.filter(u => u.trialEndsAt && new Date() > safeDate(u.trialEndsAt)).length, color: 'bg-orange-500' },
                       { id: 'pending', label: 'পেন্ডিং', count: users.filter(u => u.status === 'pending').length, color: 'bg-amber-500' },
                       { id: 'active', label: 'একটিভ', count: users.filter(u => u.status === 'active').length, color: 'bg-blue-500' },
                       { id: 'blocked', label: 'ব্লক করা', count: users.filter(u => u.status === 'blocked').length, color: 'bg-red-500' }
@@ -1003,7 +1029,7 @@ export const AdminPanelPage: React.FC = () => {
                           day: '2-digit',
                           month: '2-digit',
                           year: '2-digit'
-                        }).format(new Date(user.created_at))
+                        }).format(safeDate(user.created_at))
                       : "N/A";
 
                     return (
@@ -1032,14 +1058,14 @@ export const AdminPanelPage: React.FC = () => {
                                 <div className="font-black text-lg tracking-tight text-zinc-900 dark:text-white leading-tight">
                                   {user.fullName || user.username}
                                 </div>
-                                {user.last_active_at && (new Date().getTime() - new Date(user.last_active_at).getTime() < 300000) && (
+                                {user.last_active_at && (new Date().getTime() - safeDate(user.last_active_at).getTime() < 300000) && (
                                   <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">Active Now</span>
                                 )}
                               </div>
                               <div className="text-[11px] text-zinc-500 font-bold">{user.email || "No email set"}</div>
                               {user.last_active_at && (
                                 <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">
-                                  Last Active: {new Date(user.last_active_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                                  Last Active: {safeDate(user.last_active_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
                                 </div>
                               )}
                               <div className="text-[10px] text-zinc-400">Joined: {regDate}</div>
@@ -1094,11 +1120,11 @@ export const AdminPanelPage: React.FC = () => {
                                 <div className="flex flex-col">
                                   <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-0.5">Trial Expiry</span>
                                   <div className="flex items-center gap-2">
-                                    <span className={`text-sm font-black ${new Date(user.trialEndsAt) < new Date() ? 'text-red-500' : 'text-emerald-500'}`}>
-                                      {new Date(user.trialEndsAt).toLocaleDateString('en-GB')}
+                                    <span className={`text-sm font-black ${safeDate(user.trialEndsAt) < new Date() ? 'text-red-500' : 'text-emerald-500'}`}>
+                                      {safeDate(user.trialEndsAt).toLocaleDateString('en-GB')}
                                     </span>
                                     <span className="text-[10px] text-zinc-400">
-                                      ({Math.ceil((new Date(user.trialEndsAt).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))} days left)
+                                      ({Math.ceil((safeDate(user.trialEndsAt).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))} days left)
                                     </span>
                                   </div>
                                 </div>
@@ -1106,7 +1132,7 @@ export const AdminPanelPage: React.FC = () => {
                                   onClick={() => {
                                     setEditingTrialUserId(user.id);
                                     // Format for datetime-local input: YYYY-MM-DDTHH:mm
-                                    const date = new Date(user.trialEndsAt);
+                                    const date = safeDate(user.trialEndsAt);
                                     const formattedDate = date.toISOString().slice(0, 16);
                                     setNewTrialDate(formattedDate);
                                   }}
@@ -1164,13 +1190,13 @@ export const AdminPanelPage: React.FC = () => {
                                 <div className="bg-zinc-50 dark:bg-zinc-900/50 p-3 rounded-xl border border-black/5 dark:border-white/5">
                                   <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Last Login</div>
                                   <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                                    {user.last_login_at ? new Date(user.last_login_at).toLocaleString('en-GB') : 'Never'}
+                                    {user.last_login_at ? safeDate(user.last_login_at).toLocaleString('en-GB') : 'Never'}
                                   </div>
                                 </div>
                                 <div className="bg-zinc-50 dark:bg-zinc-900/50 p-3 rounded-xl border border-black/5 dark:border-white/5">
                                   <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Last Active</div>
                                   <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                                    {user.last_active_at ? new Date(user.last_active_at).toLocaleString('en-GB') : 'Never'}
+                                    {user.last_active_at ? safeDate(user.last_active_at).toLocaleString('en-GB') : 'Never'}
                                   </div>
                                 </div>
                               </div>
@@ -1486,7 +1512,7 @@ export const AdminPanelPage: React.FC = () => {
                           <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Transaction ID: <span className="text-zinc-900 dark:text-white">{sub.transaction_id}</span></div>
                         </div>
                         <div className="text-[9px] text-zinc-400 mt-1">
-                          Requested: {new Date(sub.created_at).toLocaleString('en-GB')}
+                          Requested: {safeDate(sub.created_at).toLocaleString('en-GB')}
                         </div>
                       </div>
 
@@ -1645,7 +1671,7 @@ export const AdminPanelPage: React.FC = () => {
                       <div className="flex justify-between items-center mb-1">
                         <span className="font-black text-sm truncate">{user.username}</span>
                         <span className="text-[8px] font-bold text-zinc-400 uppercase">
-                          {new Date(user.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {safeDate(user.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
                       <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate font-medium">
@@ -1712,7 +1738,7 @@ export const AdminPanelPage: React.FC = () => {
                             {msg.message}
                           </div>
                           <p className={`text-[8px] font-bold text-zinc-400 ${msg.sender_role === 'admin' ? 'text-right' : 'text-left'}`}>
-                            {new Date(msg.created_at).toLocaleString()}
+                            {safeDate(msg.created_at).toLocaleString()}
                           </p>
                         </div>
                       </div>
@@ -1931,7 +1957,7 @@ export const AdminPanelPage: React.FC = () => {
                     <span>{ref.referee_username}</span>
                   </div>
                   <div className="text-zinc-400 text-[10px]">
-                    {new Date(ref.created_at).toLocaleDateString()}
+                    {safeDate(ref.created_at).toLocaleDateString()}
                   </div>
                 </div>
               ))}
@@ -2000,7 +2026,7 @@ export const AdminPanelPage: React.FC = () => {
                           <div className="flex items-center justify-between mb-3">
                             <h4 className="font-black text-lg">{note.title}</h4>
                             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                              {new Date(note.updated_at).toLocaleDateString()}
+                              {safeDate(note.updated_at).toLocaleDateString()}
                             </span>
                           </div>
                           <p className="text-sm text-zinc-600 dark:text-zinc-400 font-medium leading-relaxed whitespace-pre-wrap">

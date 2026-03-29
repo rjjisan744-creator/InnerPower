@@ -86,6 +86,19 @@ export const ProfilePage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const safeDate = (date: any) => {
+    if (!date) return new Date(0);
+    if (date instanceof Date) return date;
+    if (date && typeof date === 'object' && 'seconds' in date) {
+      return new Date(date.seconds * 1000);
+    }
+    if (date && typeof date.toDate === 'function') {
+      return date.toDate();
+    }
+    const d = new Date(date);
+    return isNaN(d.getTime()) ? new Date(0) : d;
+  };
+
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -111,7 +124,7 @@ export const ProfilePage: React.FC = () => {
             id: docSnap.id,
             isPaid: !!userData.is_paid,
             trialEndsAt: userData.trial_ends_at,
-            isTrialExpired: userData.trial_ends_at ? new Date(userData.trial_ends_at) < new Date() : false
+            isTrialExpired: userData.trial_ends_at ? safeDate(userData.trial_ends_at) < new Date() : false
           };
           setUser(updatedUser);
           localStorage.setItem('user', JSON.stringify(updatedUser));
@@ -205,7 +218,29 @@ export const ProfilePage: React.FC = () => {
     try {
       const q = query(collection(db, "referrals"), where("referrer_id", "==", user.id), orderBy("created_at", "desc"));
       const snap = await getDocs(q);
-      setReferralHistory(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
+      const history = await Promise.all(snap.docs.map(async (d) => {
+        const data = d.data();
+        try {
+          const refereeDoc = await getDoc(doc(db, "users", data.referee_id));
+          const refereeData = refereeDoc.exists() ? refereeDoc.data() : { username: 'Unknown', status: 'pending' };
+          return {
+            id: d.id,
+            ...data,
+            referee_name: refereeData.username,
+            referee_status: refereeData.status
+          };
+        } catch (err) {
+          return {
+            id: d.id,
+            ...data,
+            referee_name: 'Unknown',
+            referee_status: 'pending'
+          };
+        }
+      }));
+      
+      setReferralHistory(history);
       setShowReferralModal(true);
     } catch (error) {
       console.error('Error fetching referral history:', error);
@@ -366,7 +401,7 @@ export const ProfilePage: React.FC = () => {
     currentlyReading: user.currentlyReading || "None",
     trialDaysLeft: (() => {
       if (!user.trialEndsAt) return 0;
-      const endsAt = new Date(user.trialEndsAt);
+      const endsAt = safeDate(user.trialEndsAt);
       const now = new Date();
       const diffTime = endsAt.getTime() - now.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -597,7 +632,7 @@ export const ProfilePage: React.FC = () => {
                           {showHistory && (book as any).read_at && (
                             <div className="flex items-center gap-1 mt-1 text-[10px] text-emerald-500 font-black uppercase tracking-widest">
                               <Clock size={10} />
-                              {new Date((book as any).read_at).toLocaleDateString()}
+                              {safeDate((book as any).read_at).toLocaleDateString()}
                             </div>
                           )}
                         </div>
@@ -776,7 +811,7 @@ export const ProfilePage: React.FC = () => {
                           <div className="flex flex-col gap-1">
                             <span className="text-white font-bold text-sm">{ref.referee_name}</span>
                             <span className="text-[10px] text-white/40">
-                              {new Date(ref.created_at).toLocaleDateString()}
+                              {safeDate(ref.created_at).toLocaleDateString()}
                             </span>
                           </div>
                           <div className="flex flex-col items-end gap-1">
@@ -913,7 +948,7 @@ export const ProfilePage: React.FC = () => {
                           <p className="text-xs text-zinc-400 font-medium truncate mb-2">{note.content || 'No content'}</p>
                           <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-300 dark:text-zinc-600 uppercase tracking-widest">
                             <Clock size={10} />
-                            {new Date(note.updated_at).toLocaleDateString()}
+                            {safeDate(note.updated_at).toLocaleDateString()}
                           </div>
                         </div>
                         <ChevronRight size={18} className="text-zinc-200 group-hover:translate-x-1 transition-transform" />

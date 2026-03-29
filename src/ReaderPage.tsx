@@ -29,6 +29,19 @@ export const ReaderPage: React.FC = () => {
   const { t } = useApp();
   const navigate = useNavigate();
 
+  const safeDate = (date: any) => {
+    if (!date) return new Date(0);
+    if (date instanceof Date) return date;
+    if (date && typeof date === 'object' && 'seconds' in date) {
+      return new Date(date.seconds * 1000);
+    }
+    if (date && typeof date.toDate === 'function') {
+      return date.toDate();
+    }
+    const d = new Date(date);
+    return isNaN(d.getTime()) ? new Date(0) : d;
+  };
+
   useEffect(() => {
     const p = new URLSearchParams(location.search).get('page');
     if (p) {
@@ -85,7 +98,7 @@ export const ReaderPage: React.FC = () => {
         }
         
         const now = new Date();
-        const trialEnds = data.trial_ends_at ? new Date(data.trial_ends_at) : new Date(0);
+        const trialEnds = data.trial_ends_at ? safeDate(data.trial_ends_at) : new Date(0);
         const isTrialExpired = now > trialEnds;
 
         const updatedUser = {
@@ -137,7 +150,7 @@ export const ReaderPage: React.FC = () => {
 
   if (!book) return null;
 
-  const isTrialExpired = user?.trialEndsAt ? new Date(user.trialEndsAt) < new Date() : user?.isTrialExpired;
+  const isTrialExpired = user?.trialEndsAt ? safeDate(user.trialEndsAt) < new Date() : user?.isTrialExpired;
 
   // If trial expired and not paid, show only the overlay
   if (user && isTrialExpired && !user.isPaid) {

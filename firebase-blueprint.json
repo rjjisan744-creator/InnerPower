@@ -148,6 +148,18 @@
         "value": { "type": "string" }
       },
       "required": ["key", "value"]
+    },
+    "Referral": {
+      "title": "Referral",
+      "description": "User referral tracking",
+      "type": "object",
+      "properties": {
+        "referrer_id": { "type": "string" },
+        "referee_id": { "type": "string" },
+        "bonus_granted": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["referrer_id", "referee_id"]
     }
   },
   "firestore": {
@@ -190,6 +202,10 @@
     "/settings/{settingId}": {
       "schema": "Setting",
       "description": "App settings"
+    },
+    "/referrals/{referralId}": {
+      "schema": "Referral",
+      "description": "Referral tracking"
     },
     "/reading_history/{historyId}": {
       "schema": {

@@ -47,6 +47,19 @@ export const HomePage: React.FC = () => {
   const { t, language, setLanguage, theme, setTheme } = useApp();
   const navigate = useNavigate();
 
+  const safeDate = (date: any) => {
+    if (!date) return new Date(0);
+    if (date instanceof Date) return date;
+    if (date && typeof date === 'object' && 'seconds' in date) {
+      return new Date(date.seconds * 1000);
+    }
+    if (date && typeof date.toDate === 'function') {
+      return date.toDate();
+    }
+    const d = new Date(date);
+    return isNaN(d.getTime()) ? new Date(0) : d;
+  };
+
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (!storedUser) {
@@ -67,7 +80,7 @@ export const HomePage: React.FC = () => {
         }
         
         const now = new Date();
-        const trialEnds = data.trial_ends_at ? new Date(data.trial_ends_at) : new Date(0);
+        const trialEnds = data.trial_ends_at ? safeDate(data.trial_ends_at) : new Date(0);
         const isTrialExpired = now > trialEnds;
 
         const updatedUser = {
@@ -276,7 +289,7 @@ export const HomePage: React.FC = () => {
         <div className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{notif.message}</div>
         <div className="flex items-center justify-between mt-3">
           <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest">
-            {new Date(notif.created_at).toLocaleString('en-GB')}
+            {safeDate(notif.created_at).toLocaleString('en-GB')}
           </div>
           <button 
             onClick={() => setShowReplies(!showReplies)}
@@ -294,7 +307,7 @@ export const HomePage: React.FC = () => {
                 <div key={reply.id} className="bg-white/50 dark:bg-black/20 p-2 rounded-xl border border-black/5 dark:border-white/5">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[9px] font-black text-zinc-500 uppercase">{reply.username}</span>
-                    <span className="text-[8px] text-zinc-400">{new Date(reply.created_at).toLocaleTimeString()}</span>
+                    <span className="text-[8px] text-zinc-400">{safeDate(reply.created_at).toLocaleTimeString()}</span>
                   </div>
                   <div className="text-[11px] text-zinc-700 dark:text-zinc-300 leading-tight">{reply.reply}</div>
                 </div>
@@ -333,7 +346,7 @@ export const HomePage: React.FC = () => {
 
   if (!user) return null;
 
-  const isTrialExpired = user.trialEndsAt ? new Date(user.trialEndsAt) < new Date() : user.isTrialExpired;
+  const isTrialExpired = user.trialEndsAt ? safeDate(user.trialEndsAt) < new Date() : user.isTrialExpired;
   const isRestricted = (isTrialExpired && !user.isPaid);
 
   const handleBookClick = (book: Book) => {

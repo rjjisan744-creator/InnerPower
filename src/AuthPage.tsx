@@ -126,7 +126,7 @@ export const AuthPage: React.FC = () => {
   useEffect(() => {
     const testConnection = async () => {
       try {
-        await getDocFromServer(doc(db, 'settings', 'general'));
+        await getDocFromServer(doc(db, 'settings', 'auth_text'));
         console.log("Firestore connection successful");
       } catch (error: any) {
         console.error("Firestore connection test failed:", error);
@@ -138,11 +138,14 @@ export const AuthPage: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const settingsDoc = await getDoc(doc(db, 'settings', 'general'));
-        if (settingsDoc.exists()) {
-          const data = settingsDoc.data();
-          setAuthText(data.auth_text || '');
-          setSmsSupportNumber(data.sms_support_number || '');
+        const authTextDoc = await getDoc(doc(db, 'settings', 'auth_text'));
+        if (authTextDoc.exists()) {
+          setAuthText(authTextDoc.data().value || '');
+        }
+        
+        const smsSupportDoc = await getDoc(doc(db, 'settings', 'sms_support_number'));
+        if (smsSupportDoc.exists()) {
+          setSmsSupportNumber(smsSupportDoc.data().value || '');
         }
       } catch (err) {
         console.error("Error fetching settings:", err);

@@ -28,6 +28,17 @@ service cloud.firestore {
              data.status in ['pending', 'active', 'blocked'];
     }
 
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidReferral(data) {
+      return hasOnlyAllowedFields(['referrer_id', 'referee_id', 'bonus_granted', 'created_at']) &&
+             data.referrer_id is string && data.referrer_id.size() > 0 &&
+             data.referee_id is string && data.referee_id.size() > 0 &&
+             data.bonus_granted is bool;
+    }
+
     // ===============================================================
     // Rules for Collections
     // ===============================================================
@@ -92,6 +103,12 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    match /referrals/{referralId} {
+      allow read: if isAuthenticated() && (resource.data.referrer_id == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidReferral(request.resource.data) && (request.resource.data.referee_id == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
     }
 
     match /reading_history/{historyId} {
