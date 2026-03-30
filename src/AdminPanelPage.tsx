@@ -102,24 +102,48 @@ export const AdminPanelPage: React.FC = () => {
   };
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log("AdminPanel: Initializing...");
     const userStr = localStorage.getItem('user');
     if (!userStr) {
+      console.warn("AdminPanel: No user in localStorage, redirecting...");
       navigate('/');
       return;
     }
-    const user = JSON.parse(userStr);
+
+    let user;
+    try {
+      user = JSON.parse(userStr);
+    } catch (e) {
+      console.error("AdminPanel: Failed to parse user", e);
+      navigate('/');
+      return;
+    }
+
     if (user.role !== 'admin') {
+      console.warn("AdminPanel: User is not admin, redirecting...", user.role);
       navigate('/');
       return;
     }
     
-    // If we reach here, user is admin in localStorage
-    setIsLoading(false);
+    console.log("AdminPanel: User is admin, starting listeners...");
+    
+    // Safety timeout
+    const timeoutId = setTimeout(() => {
+      setIsLoading((prev) => {
+        if (prev) {
+          console.warn("AdminPanel: Loading timeout reached, forcing finish");
+          return false;
+        }
+        return prev;
+      });
+    }, 10000);
 
     // Real-time listeners
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc")), (snap) => {
+      console.log("AdminPanel: Users snapshot received", snap.size);
       const data = snap.docs.map(doc => {
         const d = doc.data();
         return {
@@ -134,7 +158,14 @@ export const AdminPanelPage: React.FC = () => {
         } as unknown as User;
       });
       setUsers(data.filter(u => u.role !== 'admin'));
-    }, (err) => console.error('AdminPanel: Users listener error:', err));
+      setIsLoading(false);
+      clearTimeout(timeoutId);
+    }, (err) => {
+      console.error('AdminPanel: Users listener error:', err);
+      setLoadError(err.message);
+      setIsLoading(false);
+      clearTimeout(timeoutId);
+    });
 
     const unsubBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", false), orderBy("sort_index", "asc")), (snap) => {
       setBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
@@ -849,8 +880,40 @@ export const AdminPanelPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white p-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mb-4"></div>
+        <p className="text-gray-500 animate-pulse">অ্যাডমিন প্যানেল লোড হচ্ছে...</p>
+        <div className="mt-4 text-[10px] text-gray-300 font-mono">
+          {loadError ? `Error: ${loadError}` : "Fetching data from Firestore..."}
+        </div>
+        {loadError && (
+          <div className="mt-4 p-4 bg-red-50 text-red-600 rounded-lg max-w-md text-center">
+            <p className="font-bold mb-2">Error Loading Data:</p>
+            <p className="text-sm font-mono">{loadError}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!loadError && (
+          <div className="flex flex-col items-center gap-4">
+            <button 
+              onClick={() => setIsLoading(false)}
+              className="mt-8 text-gray-400 hover:text-emerald-600 text-xs transition-colors"
+            >
+              Skip Loading (Force Open)
+            </button>
+            <button 
+              onClick={() => navigate('/')}
+              className="text-emerald-600 hover:underline text-sm"
+            >
+              Go Back Home
+            </button>
+          </div>
+        )}
       </div>
     );
   }

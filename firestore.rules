@@ -18,7 +18,8 @@ service cloud.firestore {
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
           request.auth.token.email == "rjjisan744@gmail.com" ||
-          request.auth.token.email == "rjjisan744@innerpower.app"
+          request.auth.token.email == "rjjisan744@innerpower.app" ||
+          request.auth.token.email == "admin@innerpower.app"
         );
     }
 
