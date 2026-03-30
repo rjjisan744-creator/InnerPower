@@ -104,23 +104,21 @@ export const AdminPanelPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const checkAdmin = async () => {
-      const userStr = localStorage.getItem('user');
-      if (!userStr) {
-        navigate('/');
-        return;
-      }
-      const user = JSON.parse(userStr);
-      if (user.role !== 'admin') {
-        navigate('/');
-        return;
-      }
-      setIsLoading(false);
-    };
-    checkAdmin();
+    const userStr = localStorage.getItem('user');
+    if (!userStr) {
+      navigate('/');
+      return;
+    }
+    const user = JSON.parse(userStr);
+    if (user.role !== 'admin') {
+      navigate('/');
+      return;
+    }
+    
+    // If we reach here, user is admin in localStorage
+    setIsLoading(false);
 
     // Real-time listeners
-    if (isLoading) return;
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc")), (snap) => {
       const data = snap.docs.map(doc => {
         const d = doc.data();
@@ -186,11 +184,11 @@ export const AdminPanelPage: React.FC = () => {
         if (doc.id === 'subscription_amount') setSubscriptionAmount(Number(doc.data().value));
         if (doc.id === 'lock_all_categories') setLockAllCategories(doc.data().value);
       });
-    });
+    }, (err) => console.error('AdminPanel: Settings listener error:', err));
 
     const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc")), (snap) => {
       setReferrals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error('AdminPanel: Referrals listener error:', err));
 
     return () => {
       unsubUsers();
@@ -203,7 +201,7 @@ export const AdminPanelPage: React.FC = () => {
       unsubSettings();
       unsubReferrals();
     };
-  }, [isLoading, navigate]);
+  }, [navigate]);
 
   const fetchChatMessages = (userId: number | string) => {
     // This is now handled by the real-time listener if we want, 

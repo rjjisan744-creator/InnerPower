@@ -9,7 +9,7 @@ interface SubscriptionOverlayProps {
   onClose?: () => void;
 }
 
-import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 
 export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, onClose }) => {

@@ -34,11 +34,18 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
+    let unsubDoc: (() => void) | null = null;
+    
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (unsubDoc) {
+        unsubDoc();
+        unsubDoc = null;
+      }
+
       if (firebaseUser) {
         try {
           // Use onSnapshot for real-time status updates (blocked/pending)
-          const unsubDoc = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
+          unsubDoc = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
             if (docSnap.exists()) {
               const userData = docSnap.data();
               const trialEndsAt = userData.trial_ends_at || '';
@@ -66,7 +73,6 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             console.error("Firestore listener error:", error);
             setLoading(false);
           });
-          return () => unsubDoc();
         } catch (error) {
           console.error("Auth state sync error:", error);
           setLoading(false);
@@ -78,7 +84,10 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (unsubDoc) unsubDoc();
+    };
   }, []);
 
   useEffect(() => {

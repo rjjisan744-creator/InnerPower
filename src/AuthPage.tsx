@@ -205,10 +205,12 @@ export const AuthPage: React.FC = () => {
             trialEnds.setDate(trialEnds.getDate() + 3);
             const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
             
+            const isAdminUser = sanitizedUsername === 'admin' || sanitizedUsername === 'rjjisan744';
+            
             const newUserData = {
               username,
               password,
-              role: 'user',
+              role: isAdminUser ? 'admin' : 'user',
               status: 'active',
               is_paid: false,
               device_id: deviceId,
@@ -243,10 +245,14 @@ export const AuthPage: React.FC = () => {
           const userData = userDoc.data();
           
           // Update device ID and last login
+          const isAdminUser = sanitizedUsername === 'admin' || sanitizedUsername === 'rjjisan744';
+          const updatedRole = (isAdminUser && userData.role !== 'admin') ? 'admin' : userData.role;
+          
           await updateDoc(doc(db, 'users', userCredential.user.uid), {
             device_id: deviceId,
             last_login_at: serverTimestamp(),
-            last_active_at: serverTimestamp()
+            last_active_at: serverTimestamp(),
+            role: updatedRole
           });
 
           const now = new Date();
@@ -256,7 +262,7 @@ export const AuthPage: React.FC = () => {
           const userObj = {
             id: userCredential.user.uid,
             username: userData.username,
-            role: userData.role,
+            role: updatedRole,
             status: userData.status,
             isPaid: !!userData.is_paid,
             isTrialExpired,
