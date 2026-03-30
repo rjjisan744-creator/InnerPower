@@ -191,7 +191,7 @@ export const AuthPage: React.FC = () => {
     
     const deviceId = getDeviceId();
     const sanitizedUsername = username.toLowerCase().replace(/\s+/g, '');
-    const email = `${sanitizedUsername}@innerpower.app`;
+    const email = sanitizedUsername.includes('@') ? sanitizedUsername : `${sanitizedUsername}@innerpower.app`;
 
     try {
       if (isLogin) {

@@ -59,7 +59,7 @@ const Toast: React.FC<{ message: string; type: 'success' | 'error'; onClose: () 
 };
 
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, addDoc, deleteDoc, orderBy, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 export const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
@@ -208,8 +208,14 @@ export const ProfilePage: React.FC = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('user');
-    navigate('/auth');
+    auth.signOut().then(() => {
+      localStorage.removeItem('user');
+      navigate('/auth');
+    }).catch(err => {
+      console.error("Logout error:", err);
+      localStorage.removeItem('user');
+      navigate('/auth');
+    });
   };
 
   const fetchReferralHistory = async () => {
@@ -393,7 +399,7 @@ export const ProfilePage: React.FC = () => {
     if (navigator.share) {
       navigator.share({
         title: 'InnerPower App',
-        text: `আমার রেফার কোড ${user?.referralCode} ব্যবহার করে InnerPower অ্যাপে জয়েন করুন এবং ৩ দিনের জায়গায় ৬ দিন ফ্রি ট্রায়াল পান!`,
+        text: `আমার রেফার কোড ${user?.referralCode} ব্যবহার করে InnerPower অ্যাপে জয়েন করুন এবং ৩ দিনের জায়গায় ৬ দিন Free ট্রায়াল পান!`,
         url: window.location.origin,
       }).catch(console.error);
     } else {
@@ -467,6 +473,15 @@ export const ProfilePage: React.FC = () => {
           <div className="w-10" />
         </div>
       </header>
+
+      {/* Trial Banner */}
+      {!user?.isPaid && profileData.trialDaysLeft !== null && (
+        <div className={`py-2 text-center font-bold text-sm transition-colors ${profileData.trialDaysLeft <= 1 ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
+          {profileData.trialDaysLeft > 0 
+            ? `আপনার Free ট্রায়াল এর মিয়াদ আরও ${profileData.trialDaysLeft} দিন বাকি আছে` 
+            : 'আপনার ট্রায়াল এর মিয়াদ শেষ হয়েছে'}
+        </div>
+      )}
 
       <main className="max-w-2xl mx-auto p-4 md:p-8 space-y-8">
         {/* Profile Header Card */}
@@ -711,7 +726,7 @@ export const ProfilePage: React.FC = () => {
               <h3 className="text-xl font-black tracking-tight">Refer & Earn</h3>
             </div>
             <p className="text-emerald-50 font-medium text-sm mb-6 leading-relaxed">
-              আপনার বন্ধুদের রেফার করুন এবং প্রতি সফল রেফারে ৩ দিন অতিরিক্ত ফ্রি ট্রায়াল পান! (সর্বোচ্চ ১০ জন)
+              আপনার বন্ধুদের রেফার করুন এবং প্রতি সফল রেফারে ৩ দিন অতিরিক্ত Free ট্রায়াল পান! (সর্বোচ্চ ১০ জন)
             </p>
             
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 flex items-center justify-between border border-white/20 mb-6">

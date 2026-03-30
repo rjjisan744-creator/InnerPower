@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from './AppContext';
 import { CATEGORIES } from './constants';
 import { User, Book, Category, Note } from './types';
-import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
@@ -105,6 +105,20 @@ export const AdminPanelPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Auto-unlock loading after 3 seconds to prevent stuck spinners
+    const timer = setTimeout(() => {
+      setIsLoading((prev) => {
+        if (prev) {
+          console.warn("AdminPanel: Auto-unlocking loading state after 3s");
+          return false;
+        }
+        return prev;
+      });
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     console.log("AdminPanel: Initializing...");
     const userStr = localStorage.getItem('user');
     if (!userStr) {
@@ -141,11 +155,11 @@ export const AdminPanelPage: React.FC = () => {
         }
         return prev;
       });
-    }, 10000);
+    }, 5000);
 
     // Real-time listeners
     console.log("AdminPanel: Setting up users listener...");
-    const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc")), (snap) => {
+    const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc"), limit(50)), (snap) => {
       console.log("AdminPanel: Users snapshot received, size:", snap.size);
       const data = snap.docs.map(doc => {
         const d = doc.data();
@@ -165,44 +179,58 @@ export const AdminPanelPage: React.FC = () => {
       clearTimeout(timeoutId);
     }, (err) => {
       console.error('AdminPanel: Users listener error:', err);
-      setLoadError(err.message);
+      setLoadError(`Users Listener Error: ${err.message}`);
       setIsLoading(false);
       clearTimeout(timeoutId);
     });
 
+    console.log("AdminPanel: Setting up books listener...");
     const unsubBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", false), orderBy("sort_index", "asc")), (snap) => {
+      console.log("AdminPanel: Books snapshot received, size:", snap.size);
       setBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: Books listener error:', err);
       setLoadError(`Books Error: ${err.message}`);
+      setIsLoading(false);
     });
 
+    console.log("AdminPanel: Setting up deleted books listener...");
     const unsubDeletedBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", true)), (snap) => {
+      console.log("AdminPanel: DeletedBooks snapshot received, size:", snap.size);
       setDeletedBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: DeletedBooks listener error:', err);
       setLoadError(`Deleted Books Error: ${err.message}`);
+      setIsLoading(false);
     });
 
     const unsubCategories = onSnapshot(query(collection(db, "categories"), orderBy("sort_index", "asc")), (snap) => {
       setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Category)));
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: Categories listener error:', err);
       setLoadError(`Categories Error: ${err.message}`);
+      setIsLoading(false);
     });
 
     const unsubNotifications = onSnapshot(query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(100)), (snap) => {
       setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: Notifications listener error:', err);
       setLoadError(`Notifications Error: ${err.message}`);
+      setIsLoading(false);
     });
 
     const unsubSubscriptions = onSnapshot(query(collection(db, "subscriptions"), orderBy("created_at", "desc")), (snap) => {
       setSubscriptions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: Subscriptions listener error:', err);
       setLoadError(`Subscriptions Error: ${err.message}`);
+      setIsLoading(false);
     });
 
     const unsubSupport = onSnapshot(query(collection(db, "support_messages"), orderBy("created_at", "desc")), (snap) => {
@@ -221,9 +249,11 @@ export const AdminPanelPage: React.FC = () => {
         }
       });
       setSupportMessages(Object.values(userGroups));
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: Support listener error:', err);
       setLoadError(`Support Error: ${err.message}`);
+      setIsLoading(false);
     });
 
     const unsubSettings = onSnapshot(collection(db, "settings"), (snap) => {
@@ -236,16 +266,20 @@ export const AdminPanelPage: React.FC = () => {
         if (doc.id === 'subscription_amount') setSubscriptionAmount(Number(doc.data().value));
         if (doc.id === 'lock_all_categories') setLockAllCategories(doc.data().value);
       });
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: Settings listener error:', err);
       setLoadError(`Settings Error: ${err.message}`);
+      setIsLoading(false);
     });
 
     const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc")), (snap) => {
       setReferrals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setIsLoading(false);
     }, (err) => {
       console.error('AdminPanel: Referrals listener error:', err);
       setLoadError(`Referrals Error: ${err.message}`);
+      setIsLoading(false);
     });
 
     return () => {
@@ -905,6 +939,41 @@ export const AdminPanelPage: React.FC = () => {
   );
   const filteredDeletedBooks = deletedBooks.filter(b => b.title.toLowerCase().includes(recycleSearch.toLowerCase()));
 
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 dark:bg-zinc-950 p-4 text-center">
+        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-8 rounded-3xl border border-red-100 dark:border-red-900/30 max-w-md w-full shadow-2xl shadow-red-500/10">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400" />
+          </div>
+          <h2 className="text-xl font-bold mb-2">লোড করতে সমস্যা হয়েছে</h2>
+          <p className="text-sm text-red-500/80 mb-6 font-mono break-words">{loadError}</p>
+          
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-600/20"
+            >
+              আবার চেষ্টা করুন
+            </button>
+            <button 
+              onClick={() => setLoadError(null)}
+              className="w-full py-3 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-zinc-300 transition-all"
+            >
+              Skip Error & Enter
+            </button>
+            <button 
+              onClick={() => navigate('/')}
+              className="text-zinc-500 hover:underline text-xs font-bold mt-2"
+            >
+              Go Back Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white p-4">
@@ -927,15 +996,18 @@ export const AdminPanelPage: React.FC = () => {
         )}
         {!loadError && (
           <div className="flex flex-col items-center gap-4">
+            <div className="text-[10px] text-zinc-400 font-mono animate-pulse">
+              Connecting to Firestore...
+            </div>
             <button 
               onClick={() => setIsLoading(false)}
-              className="mt-8 text-gray-400 hover:text-emerald-600 text-xs transition-colors"
+              className="mt-4 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg text-xs font-bold hover:bg-zinc-200 transition-all"
             >
               Skip Loading (Force Open)
             </button>
             <button 
               onClick={() => navigate('/')}
-              className="text-emerald-600 hover:underline text-sm"
+              className="text-emerald-600 hover:underline text-sm font-bold"
             >
               Go Back Home
             </button>

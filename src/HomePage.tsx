@@ -361,8 +361,14 @@ export const HomePage: React.FC = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('user');
-    navigate('/auth');
+    auth.signOut().then(() => {
+      localStorage.removeItem('user');
+      navigate('/auth');
+    }).catch(err => {
+      console.error("Logout error:", err);
+      localStorage.removeItem('user');
+      navigate('/auth');
+    });
   };
 
   if (!user) return null;
@@ -531,7 +537,7 @@ export const HomePage: React.FC = () => {
       {!user?.isPaid && trialDaysLeft !== null && (
         <div className={`py-2 text-center font-bold text-sm transition-colors ${trialDaysLeft <= 1 ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
           {trialDaysLeft > 0 
-            ? `আপনার ট্রায়াল এর মিয়াদ আরও ${trialDaysLeft} দিন বাকি আছে` 
+            ? `আপনার Free ট্রায়াল এর মিয়াদ আরও ${trialDaysLeft} দিন বাকি আছে` 
             : 'আপনার ট্রায়াল এর মিয়াদ শেষ হয়েছে'}
         </div>
       )}

@@ -12,7 +12,7 @@ import { BlockedAccountPage } from './BlockedAccountPage';
 import { User } from './types';
 
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 const safeDate = (date: any) => {
@@ -41,11 +41,18 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       setLoading((prev) => {
         if (prev) {
           console.warn("StatusGuard: Loading timeout reached, forcing finish");
+          // If we have a firebase user, try to use localStorage as a last resort
+          const storedUser = localStorage.getItem('user');
+          if (storedUser) {
+            try {
+              setUser(JSON.parse(storedUser));
+            } catch (e) {}
+          }
           return false;
         }
         return prev;
       });
-    }, 6000);
+    }, 4000);
     
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log("StatusGuard: Auth state changed", firebaseUser?.uid);
@@ -56,6 +63,20 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       }
 
       if (firebaseUser) {
+        // Try to load from localStorage as a fallback while waiting for Firestore
+        const storedUserStr = localStorage.getItem('user');
+        if (storedUserStr) {
+          try {
+            const storedUser = JSON.parse(storedUserStr);
+            if (storedUser.id === firebaseUser.uid) {
+              console.log("StatusGuard: Using cached user as fallback");
+              setUser(storedUser);
+            }
+          } catch (e) {
+            console.error("StatusGuard: Failed to parse cached user", e);
+          }
+        }
+
         try {
           // Use onSnapshot for real-time status updates (blocked/pending)
           unsubDoc = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
@@ -64,7 +85,7 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               const userData = docSnap.data();
               
               // Auto-promote default admins if they aren't already
-              const isAdminEmail = firebaseUser.email === 'rjjisan744@gmail.com';
+              const isAdminEmail = firebaseUser.email === 'rjjisan744@gmail.com' || firebaseUser.email === 'rjjisan744@innerpower.app' || firebaseUser.email === 'admin@innerpower.app';
               const isAdminUsername = userData.username === 'admin' || userData.username === 'rjjisan744';
               const shouldBeAdmin = isAdminEmail || isAdminUsername;
               
@@ -92,7 +113,32 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               setUser(updatedUser);
             } else {
               console.warn("StatusGuard: User doc does not exist for UID:", firebaseUser.uid);
-              setUser(null);
+              
+              // If this is a known admin email, auto-create the profile
+              const isAdminEmail = firebaseUser.email === 'rjjisan744@gmail.com' || firebaseUser.email === 'rjjisan744@innerpower.app' || firebaseUser.email === 'admin@innerpower.app';
+              if (isAdminEmail) {
+                console.log("StatusGuard: Auto-creating missing admin profile");
+                const adminData = {
+                  username: firebaseUser.email?.split('@')[0] || 'admin',
+                  role: 'admin',
+                  status: 'active',
+                  is_paid: true,
+                  created_at: new Date().toISOString(),
+                  email: firebaseUser.email,
+                  trial_ends_at: new Date(Date.now() + 86400000 * 365).toISOString() // 1 year for admin
+                };
+                setDoc(doc(db, 'users', firebaseUser.uid), adminData).catch(err => console.error("Failed to auto-create admin:", err));
+                
+                const newUser: User = {
+                  id: firebaseUser.uid,
+                  ...adminData,
+                  isTrialExpired: false,
+                  trialEndsAt: adminData.trial_ends_at
+                } as any;
+                setUser(newUser);
+              } else {
+                setUser(null);
+              }
             }
             setLoading(false);
             clearTimeout(timeoutId);
@@ -128,20 +174,61 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   }, [location.pathname, user]);
 
-  if (loading) {
+  if (loading || (auth.currentUser && !user)) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 dark:bg-zinc-950 p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 dark:bg-zinc-950 p-4 text-center">
         <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-gray-500 text-sm animate-pulse">প্রবেশ করা হচ্ছে...</p>
-        <div className="mt-8 text-[10px] text-gray-400 font-mono">
-          Status: {auth.currentUser ? "Authenticating..." : "Checking session..."}
+        <p className="text-gray-500 text-sm animate-pulse">
+          {auth.currentUser ? "প্রোফাইল লোড হচ্ছে..." : "প্রবেশ করা হচ্ছে..."}
+        </p>
+        
+        <div className="mt-8 text-[10px] text-gray-400 font-mono space-y-1">
+          <div>Status: {auth.currentUser ? "Syncing Firestore..." : "Checking Auth..."}</div>
+          {auth.currentUser && <div>UID: {auth.currentUser.uid}</div>}
         </div>
-        <button 
-          onClick={() => window.location.reload()}
-          className="mt-8 text-emerald-600 hover:underline text-xs"
-        >
-          Refresh Page
-        </button>
+
+        <div className="flex flex-col gap-3 mt-8 w-full max-w-xs">
+          <button 
+            onClick={() => {
+              if (auth.currentUser) {
+                // If we have a firebase user, try to construct a minimal user object to bypass
+                const minimalUser: User = {
+                  id: auth.currentUser.uid,
+                  username: auth.currentUser.displayName || 'User',
+                  role: 'user',
+                  status: 'active',
+                  isPaid: false,
+                  trialEndsAt: new Date(Date.now() + 86400000 * 3).toISOString(),
+                  isTrialExpired: false
+                };
+                setUser(minimalUser);
+              }
+              setLoading(false);
+            }}
+            className="w-full py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/20"
+          >
+            Force Enter App
+          </button>
+          
+          <div className="flex gap-4 justify-center">
+            <button 
+              onClick={() => window.location.reload()}
+              className="text-emerald-600 hover:underline text-[10px] font-bold"
+            >
+              Refresh Page
+            </button>
+            <button 
+              onClick={() => {
+                auth.signOut();
+                localStorage.removeItem('user');
+                window.location.href = '/auth';
+              }}
+              className="text-red-500 hover:underline text-[10px] font-bold"
+            >
+              Logout & Reset
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -152,15 +239,6 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   if (!user) {
-    // Check if there's a user in localStorage. If so, we might be about to load it.
-    const storedUser = localStorage.getItem('user');
-    if (storedUser && location.pathname !== '/auth') {
-      return (
-        <div className="min-h-screen bg-stone-50 dark:bg-zinc-950 flex items-center justify-center">
-          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      );
-    }
     return <Navigate to="/auth" replace />;
   }
 
