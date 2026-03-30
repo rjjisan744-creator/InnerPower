@@ -35,9 +35,11 @@ service cloud.firestore {
     }
 
     function isValidReferral(data) {
-      return hasOnlyAllowedFields(['referrer_id', 'referee_id', 'bonus_granted', 'created_at']) &&
+      return hasOnlyAllowedFields(['referrer_id', 'referrer_username', 'referee_id', 'referee_username', 'bonus_granted', 'created_at']) &&
              data.referrer_id is string && data.referrer_id.size() > 0 &&
+             data.referrer_username is string && data.referrer_username.size() > 0 &&
              data.referee_id is string && data.referee_id.size() > 0 &&
+             data.referee_username is string && data.referee_username.size() > 0 &&
              data.bonus_granted is bool;
     }
 

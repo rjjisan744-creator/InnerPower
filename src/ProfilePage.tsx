@@ -221,6 +221,16 @@ export const ProfilePage: React.FC = () => {
       
       const history = await Promise.all(snap.docs.map(async (d) => {
         const data = d.data();
+        // Use saved usernames if available, otherwise fetch
+        if (data.referee_username) {
+          return {
+            id: d.id,
+            ...data,
+            referee_name: data.referee_username,
+            referee_status: 'active'
+          };
+        }
+        
         try {
           const refereeDoc = await getDoc(doc(db, "users", data.referee_id));
           const refereeData = refereeDoc.exists() ? refereeDoc.data() : { username: 'Unknown', status: 'pending' };

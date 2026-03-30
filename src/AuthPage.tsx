@@ -319,12 +319,14 @@ export const AuthPage: React.FC = () => {
 
             // Handle referral
             if (referralCode) {
+              console.log("AuthPage: Processing referral code:", referralCode);
               const q = query(collection(db, "users"), where("referral_code", "==", referralCode), limit(1));
               const querySnapshot = await getDocs(q);
               
               if (!querySnapshot.empty) {
                 const referrerDoc = querySnapshot.docs[0];
                 const referrerData = referrerDoc.data();
+                console.log("AuthPage: Referrer found:", referrerData.username);
                 
                 if (referrerData.referral_count < 10) {
                   await runTransaction(db, async (transaction) => {
@@ -335,7 +337,9 @@ export const AuthPage: React.FC = () => {
                     const referralRef = doc(collection(db, 'referrals'));
                     transaction.set(referralRef, {
                       referrer_id: referrerDoc.id,
+                      referrer_username: referrerData.username || 'Unknown',
                       referee_id: userCredential.user.uid,
+                      referee_username: username,
                       bonus_granted: false,
                       created_at: serverTimestamp()
                     });
@@ -345,7 +349,12 @@ export const AuthPage: React.FC = () => {
                       trial_ends_at: new Date(new Date().setDate(new Date().getDate() + 6)).toISOString()
                     });
                   });
+                  console.log("AuthPage: Referral transaction completed successfully");
+                } else {
+                  console.warn("AuthPage: Referrer has reached max referral limit (10)");
                 }
+              } else {
+                console.warn("AuthPage: Invalid referral code - no user found");
               }
             }
 
@@ -381,8 +390,9 @@ export const AuthPage: React.FC = () => {
 
   const handleAdminAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminEmail === 'jisanjisan744@gmail.com' && adminPassword === '445566') {
-      const email = 'jisanjisan744@gmail.com';
+    const allowedAdminEmails = ['jisanjisan744@gmail.com', 'rjjisan744@gmail.com', 'admin@innerpower.app'];
+    if (allowedAdminEmails.includes(adminEmail) && adminPassword === '445566') {
+      const email = adminEmail;
       try {
         let userCredential;
         try {

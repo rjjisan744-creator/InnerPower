@@ -124,7 +124,9 @@ export const AdminPanelPage: React.FC = () => {
 
     if (user.role !== 'admin') {
       console.warn("AdminPanel: User is not admin, redirecting...", user.role);
-      navigate('/');
+      setLoadError("আপনি অ্যাডমিন নন! এই পেজটি শুধুমাত্র অ্যাডমিনদের জন্য।");
+      setIsLoading(false);
+      setTimeout(() => navigate('/'), 3000);
       return;
     }
     
@@ -142,8 +144,9 @@ export const AdminPanelPage: React.FC = () => {
     }, 10000);
 
     // Real-time listeners
+    console.log("AdminPanel: Setting up users listener...");
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc")), (snap) => {
-      console.log("AdminPanel: Users snapshot received", snap.size);
+      console.log("AdminPanel: Users snapshot received, size:", snap.size);
       const data = snap.docs.map(doc => {
         const d = doc.data();
         return {
@@ -169,23 +172,38 @@ export const AdminPanelPage: React.FC = () => {
 
     const unsubBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", false), orderBy("sort_index", "asc")), (snap) => {
       setBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
-    }, (err) => console.error('AdminPanel: Books listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: Books listener error:', err);
+      setLoadError(`Books Error: ${err.message}`);
+    });
 
     const unsubDeletedBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", true)), (snap) => {
       setDeletedBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
-    }, (err) => console.error('AdminPanel: DeletedBooks listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: DeletedBooks listener error:', err);
+      setLoadError(`Deleted Books Error: ${err.message}`);
+    });
 
     const unsubCategories = onSnapshot(query(collection(db, "categories"), orderBy("sort_index", "asc")), (snap) => {
       setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Category)));
-    }, (err) => console.error('AdminPanel: Categories listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: Categories listener error:', err);
+      setLoadError(`Categories Error: ${err.message}`);
+    });
 
     const unsubNotifications = onSnapshot(query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(100)), (snap) => {
       setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error('AdminPanel: Notifications listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: Notifications listener error:', err);
+      setLoadError(`Notifications Error: ${err.message}`);
+    });
 
     const unsubSubscriptions = onSnapshot(query(collection(db, "subscriptions"), orderBy("created_at", "desc")), (snap) => {
       setSubscriptions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error('AdminPanel: Subscriptions listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: Subscriptions listener error:', err);
+      setLoadError(`Subscriptions Error: ${err.message}`);
+    });
 
     const unsubSupport = onSnapshot(query(collection(db, "support_messages"), orderBy("created_at", "desc")), (snap) => {
       const messages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
@@ -203,7 +221,10 @@ export const AdminPanelPage: React.FC = () => {
         }
       });
       setSupportMessages(Object.values(userGroups));
-    }, (err) => console.error('AdminPanel: Support listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: Support listener error:', err);
+      setLoadError(`Support Error: ${err.message}`);
+    });
 
     const unsubSettings = onSnapshot(collection(db, "settings"), (snap) => {
       snap.forEach(doc => {
@@ -215,11 +236,17 @@ export const AdminPanelPage: React.FC = () => {
         if (doc.id === 'subscription_amount') setSubscriptionAmount(Number(doc.data().value));
         if (doc.id === 'lock_all_categories') setLockAllCategories(doc.data().value);
       });
-    }, (err) => console.error('AdminPanel: Settings listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: Settings listener error:', err);
+      setLoadError(`Settings Error: ${err.message}`);
+    });
 
     const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc")), (snap) => {
       setReferrals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error('AdminPanel: Referrals listener error:', err));
+    }, (err) => {
+      console.error('AdminPanel: Referrals listener error:', err);
+      setLoadError(`Referrals Error: ${err.message}`);
+    });
 
     return () => {
       unsubUsers();
@@ -2116,15 +2143,15 @@ export const AdminPanelPage: React.FC = () => {
                 <div key={idx} className="grid grid-cols-3 p-3 items-center hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors text-xs font-bold">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 text-[10px]">
-                      {ref.referrer_username[0].toUpperCase()}
+                      {(ref.referrer_username || 'U')[0].toUpperCase()}
                     </div>
-                    <span>{ref.referrer_username}</span>
+                    <span>{ref.referrer_username || 'Unknown'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 text-[10px]">
-                      {ref.referee_username[0].toUpperCase()}
+                      {(ref.referee_username || 'U')[0].toUpperCase()}
                     </div>
-                    <span>{ref.referee_username}</span>
+                    <span>{ref.referee_username || 'Unknown'}</span>
                   </div>
                   <div className="text-zinc-400 text-[10px]">
                     {safeDate(ref.created_at).toLocaleDateString()}
