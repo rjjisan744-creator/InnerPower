@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from './AppContext';
 import { CATEGORIES } from './constants';
 import { User, Book, Category, Note } from './types';
-import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle } from 'lucide-react';
+import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
@@ -44,6 +44,8 @@ export const AdminPanelPage: React.FC = () => {
   const [homeFontSize, setHomeFontSize] = useState(16);
   const [authText, setAuthText] = useState('');
   const [smsSupportNumber, setSmsSupportNumber] = useState('');
+  const [bkashNumber, setBkashNumber] = useState('');
+  const [subscriptionAmount, setSubscriptionAmount] = useState(100);
 
   // Book Form State
   const [editingBookId, setEditingBookId] = useState<number | null>(null);
@@ -120,29 +122,41 @@ export const AdminPanelPage: React.FC = () => {
     // Real-time listeners
     if (isLoading) return;
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc")), (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as User));
+      const data = snap.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          ...d,
+          isPaid: d.is_paid || false,
+          hasPendingSubscription: d.has_pending_subscription || false,
+          trialEndsAt: d.trial_ends_at || '',
+          referralCode: d.referral_code,
+          referredBy: d.referred_by,
+          referralCount: d.referral_count,
+        } as unknown as User;
+      });
       setUsers(data.filter(u => u.role !== 'admin'));
-    });
+    }, (err) => console.error('AdminPanel: Users listener error:', err));
 
     const unsubBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", false), orderBy("sort_index", "asc")), (snap) => {
       setBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
-    });
+    }, (err) => console.error('AdminPanel: Books listener error:', err));
 
     const unsubDeletedBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", true)), (snap) => {
       setDeletedBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
-    });
+    }, (err) => console.error('AdminPanel: DeletedBooks listener error:', err));
 
     const unsubCategories = onSnapshot(query(collection(db, "categories"), orderBy("sort_index", "asc")), (snap) => {
       setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Category)));
-    });
+    }, (err) => console.error('AdminPanel: Categories listener error:', err));
 
     const unsubNotifications = onSnapshot(query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(100)), (snap) => {
       setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error('AdminPanel: Notifications listener error:', err));
 
     const unsubSubscriptions = onSnapshot(query(collection(db, "subscriptions"), orderBy("created_at", "desc")), (snap) => {
       setSubscriptions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error('AdminPanel: Subscriptions listener error:', err));
 
     const unsubSupport = onSnapshot(query(collection(db, "support_messages"), orderBy("created_at", "desc")), (snap) => {
       const messages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
@@ -160,13 +174,16 @@ export const AdminPanelPage: React.FC = () => {
         }
       });
       setSupportMessages(Object.values(userGroups));
-    });
+    }, (err) => console.error('AdminPanel: Support listener error:', err));
 
     const unsubSettings = onSnapshot(collection(db, "settings"), (snap) => {
       snap.forEach(doc => {
         if (doc.id === 'home_text') setHomeText(doc.data().value);
         if (doc.id === 'home_font_size') setHomeFontSize(Number(doc.data().value));
         if (doc.id === 'auth_text') setAuthText(doc.data().value);
+        if (doc.id === 'sms_support_number') setSmsSupportNumber(doc.data().value);
+        if (doc.id === 'bkash_number') setBkashNumber(doc.data().value);
+        if (doc.id === 'subscription_amount') setSubscriptionAmount(Number(doc.data().value));
         if (doc.id === 'lock_all_categories') setLockAllCategories(doc.data().value);
       });
     });
@@ -448,6 +465,18 @@ export const AdminPanelPage: React.FC = () => {
     }
   };
 
+  const handleTogglePremium = async (userId: string, isPaid: boolean) => {
+    try {
+      await updateDoc(doc(db, "users", userId), { 
+        is_paid: isPaid,
+        trial_ends_at: isPaid ? new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString() : new Date(new Date().setDate(new Date().getDate() + 3)).toISOString()
+      });
+      showToast(isPaid ? 'ইউজার এখন প্রিমিয়াম!' : 'প্রিমিয়াম স্ট্যাটাস রিমুভ করা হয়েছে।');
+    } catch (error) {
+      console.error('Error toggling premium:', error);
+    }
+  };
+
   const handleUserStatus = async (userId: string, status: string) => {
     try {
       await updateDoc(doc(db, "users", userId), { status });
@@ -538,7 +567,8 @@ export const AdminPanelPage: React.FC = () => {
           transaction.update(userRef, { 
             is_paid: true, 
             status: 'active', 
-            trial_ends_at: nextYear.toISOString() 
+            trial_ends_at: nextYear.toISOString(),
+            has_pending_subscription: false
           });
 
           const notifRef = doc(collection(db, "notifications"));
@@ -562,6 +592,7 @@ export const AdminPanelPage: React.FC = () => {
     handleConfirm('আপনি কি নিশ্চিতভাবে এই সাবস্ক্রিপশনটি রিজেক্ট করতে চান?', async () => {
       try {
         await updateDoc(doc(db, "subscriptions", subId), { status: 'rejected' });
+        await updateDoc(doc(db, "users", userId), { has_pending_subscription: false });
         await addDoc(collection(db, "notifications"), {
           user_id: userId,
           title: "পেমেন্ট রিজেক্ট করা হয়েছে",
@@ -619,6 +650,8 @@ export const AdminPanelPage: React.FC = () => {
       batch.set(doc(db, "settings", "home_font_size"), { value: homeFontSize.toString() });
       batch.set(doc(db, "settings", "auth_text"), { value: authText });
       batch.set(doc(db, "settings", "sms_support_number"), { value: smsSupportNumber });
+      batch.set(doc(db, "settings", "bkash_number"), { value: bkashNumber });
+      batch.set(doc(db, "settings", "subscription_amount"), { value: subscriptionAmount.toString() });
       await batch.commit();
       showToast('সেটিংস আপডেট করা হয়েছে!');
     } catch (error) {
@@ -1084,6 +1117,17 @@ export const AdminPanelPage: React.FC = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
+                            {user.isPaid && (
+                              <div className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
+                                <ShieldCheck size={8} />
+                                Premium
+                              </div>
+                            )}
+                            {user.hasPendingSubscription && (
+                              <div className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 text-[8px] font-black uppercase tracking-widest animate-pulse">
+                                Pending
+                              </div>
+                            )}
                             <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${user.status === 'active' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
                               {user.status}
                             </div>
@@ -1286,39 +1330,58 @@ export const AdminPanelPage: React.FC = () => {
                               <hr className="border-black/5 dark:border-white/5" />
                               
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <span className="text-sm font-medium">Status: </span>
-                                  <button
-                                    onClick={() => handleUserStatus(user.id, user.status === 'active' ? 'blocked' : 'active')}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                                      user.status === 'active' ? 'bg-green-500' : 'bg-red-500'
-                                    }`}
-                                  >
-                                    <span
-                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                        user.status === 'active' ? 'translate-x-6' : 'translate-x-1'
+                                <div className="flex items-center gap-6">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Status: </span>
+                                    <button
+                                      onClick={() => handleUserStatus(user.id, user.status === 'active' ? 'blocked' : 'active')}
+                                      className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${
+                                        user.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'
                                       }`}
-                                    />
-                                  </button>
+                                    >
+                                      <span
+                                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                          user.status === 'active' ? 'translate-x-6' : 'translate-x-0.5'
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Premium: </span>
+                                    <button
+                                      onClick={() => handleTogglePremium(user.id, !user.isPaid)}
+                                      className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${
+                                        user.isPaid ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-700'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                          user.isPaid ? 'translate-x-6' : 'translate-x-0.5'
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
                                 </div>
 
-                                <button
-                                  onClick={() => setSelectedUser(user)}
-                                  className="px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
-                                >
-                                  View Full Detail
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    handleConfirm(`আপনি কি নিশ্চিতভাবে ${user.username} অ্যাকাউন্টটি ডিলিট করতে চান?`, () => {
-                                      handleDeleteUser(user.id);
-                                    });
-                                  }}
-                                  className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
-                                >
-                                  <Trash size={24} />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => setSelectedUser(user)}
+                                    className="px-3 py-1.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg text-[9px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
+                                  >
+                                    Full Detail
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleConfirm(`আপনি কি নিশ্চিতভাবে ${user.username} অ্যাকাউন্টটি ডিলিট করতে চান?`, () => {
+                                        handleDeleteUser(user.id);
+                                      });
+                                    }}
+                                    className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                  >
+                                    <Trash size={18} />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1858,6 +1921,29 @@ export const AdminPanelPage: React.FC = () => {
                     placeholder="যেমন: +8801700000000"
                     className="w-full px-5 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all font-medium"
                   />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">bKash Number (Personal)</label>
+                    <input
+                      type="text"
+                      value={bkashNumber}
+                      onChange={(e) => setBkashNumber(e.target.value)}
+                      placeholder="যেমন: 01613071344"
+                      className="w-full px-5 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all font-medium"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Subscription Amount (BDT)</label>
+                    <input
+                      type="number"
+                      value={subscriptionAmount}
+                      onChange={(e) => setSubscriptionAmount(parseInt(e.target.value))}
+                      placeholder="যেমন: 100"
+                      className="w-full px-5 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition-all font-medium"
+                    />
+                  </div>
                 </div>
 
                 <div className="pt-4">

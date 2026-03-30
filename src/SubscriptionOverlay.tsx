@@ -9,7 +9,7 @@ interface SubscriptionOverlayProps {
   onClose?: () => void;
 }
 
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, onClose }) => {
@@ -21,13 +21,23 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
   const [showSupportModal, setShowSupportModal] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+  const [bkashTarget, setBkashTarget] = useState("01613071344");
+  const [amount, setAmount] = useState(100);
 
-  const BKASH_TARGET = "01613071344";
-  const AMOUNT = 100;
   const DURATION = "১ বছর";
 
+  React.useEffect(() => {
+    const unsub = onSnapshot(collection(db, "settings"), (snap) => {
+      snap.forEach(doc => {
+        if (doc.id === 'bkash_number') setBkashTarget(doc.data().value);
+        if (doc.id === 'subscription_amount') setAmount(Number(doc.data().value));
+      });
+    });
+    return () => unsub();
+  }, []);
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(BKASH_TARGET);
+    navigator.clipboard.writeText(bkashTarget);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -42,12 +52,18 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
       await addDoc(collection(db, "subscriptions"), {
         user_id: user.id,
         username: user.username,
-        amount: AMOUNT,
+        amount: amount,
         bkash_number: bkashNumber,
         transaction_id: transactionId,
         status: 'pending',
         created_at: serverTimestamp()
       });
+      
+      // Update user document to track pending status
+      await updateDoc(doc(db, 'users', user.id), {
+        has_pending_subscription: true
+      });
+      
       setSubmitted(true);
     } catch (error) {
       console.error('Error submitting subscription:', error);
@@ -80,7 +96,7 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
               </div>
               <h2 className="text-2xl font-black tracking-tight text-red-600">ফ্রি ব্যবহারের সীমা শেষ হয়েছে।</h2>
               <p className="text-zinc-700 dark:text-zinc-300 text-sm font-bold">
-                মাত্র ১০০ টাকায় ১ বছরের প্রিমিয়াম সাবস্ক্রিপশন চালু করুন।
+                মাত্র {amount} টাকায় ১ বছরের প্রিমিয়াম সাবস্ক্রিপশন চালু করুন।
               </p>
             </div>
 
@@ -98,7 +114,7 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
                     <div className="w-10 h-10 bg-pink-100 dark:bg-pink-900/20 rounded-xl flex items-center justify-center text-pink-600 font-black text-xs">bKash</div>
                     <div>
                       <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">বিকাশ নাম্বার (Personal)</div>
-                      <div className="text-sm font-black tracking-wider">{BKASH_TARGET}</div>
+                      <div className="text-sm font-black tracking-wider">{bkashTarget}</div>
                     </div>
                   </div>
                   <button 
@@ -126,7 +142,7 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
                     placeholder="TRX12345678"
                     value={transactionId}
                     onChange={(e) => setTransactionId(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-rose-500 transition-all font-bold"
+                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-rose-500 transition-all font-bold text-zinc-950 dark:text-white placeholder:text-zinc-400"
                   />
                 </div>
               </div>
@@ -141,7 +157,7 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
                     placeholder="যেমন: 5"
                     value={bkashNumber}
                     onChange={(e) => setBkashNumber(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-rose-500 transition-all font-bold"
+                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-rose-500 transition-all font-bold text-zinc-950 dark:text-white placeholder:text-zinc-400"
                   />
                 </div>
               </div>

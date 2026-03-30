@@ -80,13 +80,35 @@ export const HomePage: React.FC = () => {
         }
         
         const now = new Date();
-        const trialEnds = data.trial_ends_at ? safeDate(data.trial_ends_at) : new Date(0);
+        let trialEndsAt = data.trial_ends_at;
+        
+        // If trial_ends_at is missing, initialize it (3 days from created_at or now)
+        if (!trialEndsAt) {
+          const createdAt = data.created_at ? safeDate(data.created_at) : now;
+          const newTrialEnds = new Date(createdAt);
+          newTrialEnds.setDate(newTrialEnds.getDate() + 3);
+          trialEndsAt = newTrialEnds.toISOString();
+          
+          // Update Firestore
+          updateDoc(doc(db, 'users', docSnap.id), { trial_ends_at: trialEndsAt }).catch(err => {
+            console.error('Error initializing trial_ends_at:', err);
+          });
+        }
+
+        const trialEnds = safeDate(trialEndsAt);
         const isTrialExpired = now > trialEnds;
+
+        // Calculate days left
+        const diffTime = trialEnds.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        setTrialDaysLeft(diffDays > 0 ? diffDays : 0);
 
         const updatedUser = {
           ...parsedUser,
           ...data,
           id: docSnap.id,
+          isPaid: !!data.is_paid,
+          hasPendingSubscription: !!data.has_pending_subscription,
           isTrialExpired
         };
         setUser(updatedUser);
@@ -106,7 +128,7 @@ export const HomePage: React.FC = () => {
         .filter(book => !book.is_deleted)
         .sort((a, b) => (a.sort_index || 0) - (b.sort_index || 0));
       setBooks(booksData);
-    });
+    }, (err) => console.error('HomePage: Books listener error:', err));
 
     // Fetch Categories
     const unsubCats = onSnapshot(collection(db, 'categories'), (snapshot) => {
@@ -114,17 +136,16 @@ export const HomePage: React.FC = () => {
         .map(doc => ({ id: doc.id, ...doc.data() } as any))
         .sort((a, b) => (a.sort_index || 0) - (b.sort_index || 0));
       setCategories(catsData);
-    });
+    }, (err) => console.error('HomePage: Categories listener error:', err));
 
     // Fetch Settings
-    const unsubSettings = onSnapshot(doc(db, 'settings', 'general'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setHomeText(data.home_text || '');
-        setHomeFontSize(parseInt(data.home_font_size) || 16);
-        setLockAllCategories(!!data.lock_all_categories);
-      }
-    });
+    const unsubSettings = onSnapshot(collection(db, 'settings'), (snap) => {
+      snap.forEach(doc => {
+        if (doc.id === 'home_text') setHomeText(doc.data().value || '');
+        if (doc.id === 'home_font_size') setHomeFontSize(parseInt(doc.data().value) || 16);
+        if (doc.id === 'lock_all_categories') setLockAllCategories(!!doc.data().value);
+      });
+    }, (err) => console.error('HomePage: Settings listener error:', err));
 
     // Fetch Notifications
     const qNotif = query(
@@ -140,7 +161,7 @@ export const HomePage: React.FC = () => {
       const lastSeenId = localStorage.getItem('lastSeenNotificationId') || '';
       const unread = notifs.filter((n: any) => n.id > lastSeenId).length;
       setUnreadCount(unread);
-    });
+    }, (err) => console.error('HomePage: Notifications listener error:', err));
 
     // Heartbeat ping to track activity
     const pingInterval = setInterval(() => {

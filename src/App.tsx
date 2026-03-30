@@ -15,6 +15,19 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
+const safeDate = (date: any) => {
+  if (!date) return new Date(0);
+  if (date instanceof Date) return date;
+  if (date && typeof date === 'object' && 'seconds' in date) {
+    return new Date(date.seconds * 1000);
+  }
+  if (date && typeof date.toDate === 'function') {
+    return date.toDate();
+  }
+  const d = new Date(date);
+  return isNaN(d.getTime()) ? new Date(0) : d;
+};
+
 const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,14 +41,18 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           const unsubDoc = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
             if (docSnap.exists()) {
               const userData = docSnap.data();
+              const trialEndsAt = userData.trial_ends_at || '';
+              const isTrialExpired = trialEndsAt ? safeDate(trialEndsAt) < new Date() : false;
+
               const updatedUser: User = {
                 id: docSnap.id,
                 username: userData.username || '',
                 role: userData.role || 'user',
                 status: userData.status || 'pending',
                 isPaid: !!userData.is_paid,
-                trialEndsAt: userData.trial_ends_at || '',
-                isTrialExpired: userData.trial_ends_at ? new Date(userData.trial_ends_at) < new Date() : false,
+                hasPendingSubscription: !!userData.has_pending_subscription,
+                trialEndsAt: trialEndsAt,
+                isTrialExpired: isTrialExpired,
                 ...userData
               };
               localStorage.setItem('user', JSON.stringify(updatedUser));
@@ -102,19 +119,20 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (user.status === 'blocked') {
       return <BlockedAccountPage />;
     }
-    if (user.status === 'pending' || user.status === 'inactive') {
-      return <PendingActivationPage />;
-    }
 
     // If trial expired and not paid, they can only access home and profile
     const isTrialExpired = user.trialEndsAt ? new Date(user.trialEndsAt) < new Date() : user.isTrialExpired;
     const isExpired = isTrialExpired && !user.isPaid;
+
+    if ((user.status === 'pending' || user.status === 'inactive') && isExpired) {
+      return <PendingActivationPage />;
+    }
+
     const restrictedPaths = ['/book/'];
     const isRestrictedPath = restrictedPaths.some(path => location.pathname.startsWith(path)) && !location.pathname.endsWith('/info');
     
     if (isExpired && isRestrictedPath) {
-      localStorage.removeItem('user');
-      return <Navigate to="/auth" replace />;
+      return <Navigate to="/" replace />;
     }
   }
 

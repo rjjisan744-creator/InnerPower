@@ -110,7 +110,9 @@ export const ReaderPage: React.FC = () => {
         setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
 
-        if (data.status !== 'active' || (isTrialExpired && !data.is_paid)) {
+        const isExpired = isTrialExpired && !data.is_paid;
+
+        if (data.status === 'blocked' || isExpired) {
           navigate('/');
         }
       } else {

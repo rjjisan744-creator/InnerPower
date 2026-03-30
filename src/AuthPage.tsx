@@ -71,12 +71,19 @@ export const AuthPage: React.FC = () => {
   const location = useLocation();
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      setReferralCode(ref);
+      setIsLogin(false);
+    }
+    
     if (location.state?.error) {
       setError(location.state.error);
       setShowErrorDialog(true);
       setDialogType('blocked');
     }
-  }, [location.state]);
+  }, [location.search, location.state]);
 
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [dialogType, setDialogType] = useState<'blocked' | 'pending'>('blocked');
@@ -183,7 +190,8 @@ export const AuthPage: React.FC = () => {
     }
     
     const deviceId = getDeviceId();
-    const email = `${username.toLowerCase()}@innerpower.app`;
+    const sanitizedUsername = username.toLowerCase().replace(/\s+/g, '');
+    const email = `${sanitizedUsername}@innerpower.app`;
 
     try {
       if (isLogin) {
@@ -201,7 +209,7 @@ export const AuthPage: React.FC = () => {
               username,
               password,
               role: 'user',
-              status: 'pending',
+              status: 'active',
               is_paid: false,
               device_id: deviceId,
               created_at: serverTimestamp(),
@@ -290,7 +298,7 @@ export const AuthPage: React.FC = () => {
             username,
             password, // Store password as requested for admin view
             role: 'user',
-            status: 'pending',
+            status: 'active',
             is_paid: false,
             device_id: deviceId,
             created_at: serverTimestamp(),
@@ -524,7 +532,7 @@ export const AuthPage: React.FC = () => {
                   : !isLogin && isUsernameAvailable === true 
                   ? 'border-emerald-500 ring-1 ring-emerald-500' 
                   : 'border-zinc-200 dark:border-zinc-800'
-              } bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all`}
+              } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all`}
             />
             {!isLogin && username.length >= 3 && (
               <div className="mt-1">
@@ -564,7 +572,7 @@ export const AuthPage: React.FC = () => {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+              className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
             />
           </div>
 
@@ -578,7 +586,7 @@ export const AuthPage: React.FC = () => {
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value)}
                 placeholder="রেফার কোড থাকলে দিন"
-                className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               />
             </div>
           )}
