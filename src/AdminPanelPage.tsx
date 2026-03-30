@@ -6,6 +6,7 @@ import { User, Book, Category, Note } from './types';
 import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
+import { AUTHORIZED_ADMIN_EMAILS } from './App';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
 
 export const AdminPanelPage: React.FC = () => {
@@ -136,9 +137,13 @@ export const AdminPanelPage: React.FC = () => {
       return;
     }
 
-    if (user.role !== 'admin') {
-      console.warn("AdminPanel: User is not admin, redirecting...", user.role);
-      setLoadError("আপনি অ্যাডমিন নন! এই পেজটি শুধুমাত্র অ্যাডমিনদের জন্য।");
+    const userEmail = auth.currentUser?.email;
+    const isEmailVerified = auth.currentUser?.emailVerified;
+    const isAdminEmail = AUTHORIZED_ADMIN_EMAILS.includes(userEmail || '') && isEmailVerified;
+
+    if (user.role !== 'admin' || !isAdminEmail) {
+      console.warn("AdminPanel: Unauthorized access attempt", user.role, userEmail, "Verified:", isEmailVerified);
+      setLoadError("আপনি অ্যাডমিন নন! এই পেজটি শুধুমাত্র অনুমোদিত এবং ভেরিফাইড অ্যাডমিনদের জন্য।");
       setIsLoading(false);
       setTimeout(() => navigate('/'), 3000);
       return;
@@ -598,6 +603,10 @@ export const AdminPanelPage: React.FC = () => {
     }
 
     try {
+      const userToDelete = users.find(u => u.id === userId);
+      if (userToDelete && userToDelete.username) {
+        await deleteDoc(doc(db, "usernames", userToDelete.username.toLowerCase()));
+      }
       await deleteDoc(doc(db, "users", userId));
       setUserDeleteConfirmId(null);
       showToast('ইউজার ডিলিট করা হয়েছে!');

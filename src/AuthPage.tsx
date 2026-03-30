@@ -106,11 +106,10 @@ export const AuthPage: React.FC = () => {
     const timer = setTimeout(async () => {
       setIsCheckingUsername(true);
       try {
-        const q = query(collection(db, "users"), where("username", "==", username), limit(1));
-        const querySnapshot = await getDocs(q);
-        setIsUsernameAvailable(querySnapshot.empty);
+        const usernameDoc = await getDoc(doc(db, "usernames", username.toLowerCase()));
+        setIsUsernameAvailable(!usernameDoc.exists());
         
-        if (!querySnapshot.empty) {
+        if (usernameDoc.exists()) {
           const suggestions = [
             `${username}${Math.floor(Math.random() * 100)}`,
             `${username}_pro`,
@@ -315,7 +314,18 @@ export const AuthPage: React.FC = () => {
           };
 
           try {
-            await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+            // Use a transaction to ensure username is unique and recorded
+            await runTransaction(db, async (transaction) => {
+              const usernameRef = doc(db, 'usernames', username.toLowerCase());
+              const usernameDoc = await transaction.get(usernameRef);
+              
+              if (usernameDoc.exists()) {
+                throw new Error("Username already taken");
+              }
+              
+              transaction.set(usernameRef, { uid: userCredential.user.uid });
+              transaction.set(doc(db, 'users', userCredential.user.uid), userData);
+            });
 
             // Handle referral
             if (referralCode) {

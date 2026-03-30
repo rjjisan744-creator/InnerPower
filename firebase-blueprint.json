@@ -160,12 +160,25 @@
         "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["referrer_id", "referee_id"]
+    },
+    "Username": {
+      "title": "Username",
+      "description": "Publicly readable collection to check username availability",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" }
+      },
+      "required": ["uid"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "User documents"
+    },
+    "/usernames/{username}": {
+      "schema": "Username",
+      "description": "Publicly readable usernames to check availability"
     },
     "/notes/{noteId}": {
       "schema": "Note",

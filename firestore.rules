@@ -15,12 +15,10 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
         (
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
           request.auth.token.email == "rjjisan744@gmail.com" ||
           request.auth.token.email == "rjjisan744@innerpower.app" ||
           request.auth.token.email == "admin@innerpower.app"
-        );
+        ) && request.auth.token.email_verified == true;
     }
 
     function isValidUser(data) {
@@ -53,6 +51,12 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
                       (request.resource.data.role == 'user' || isAdmin());
       allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow delete: if isAdmin();
     }
 

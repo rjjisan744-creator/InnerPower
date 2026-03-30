@@ -28,6 +28,12 @@ const safeDate = (date: any) => {
   return isNaN(d.getTime()) ? new Date(0) : d;
 };
 
+export const AUTHORIZED_ADMIN_EMAILS = [
+  'rjjisan744@gmail.com',
+  'rjjisan744@innerpower.app',
+  'admin@innerpower.app'
+];
+
 const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +58,7 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         }
         return prev;
       });
-    }, 4000);
+    }, 8000);
     
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log("StatusGuard: Auth state changed", firebaseUser?.uid);
@@ -85,14 +91,18 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               const userData = docSnap.data();
               
               // Auto-promote default admins if they aren't already
-              const isAdminEmail = firebaseUser.email === 'rjjisan744@gmail.com' || firebaseUser.email === 'rjjisan744@innerpower.app' || firebaseUser.email === 'admin@innerpower.app';
-              const isAdminUsername = userData.username === 'admin' || userData.username === 'rjjisan744';
-              const shouldBeAdmin = isAdminEmail || isAdminUsername;
+              // SECURITY: Must have authorized email AND it must be verified
+              const isAdminEmail = AUTHORIZED_ADMIN_EMAILS.includes(firebaseUser.email || '') && firebaseUser.emailVerified;
               
-              if (shouldBeAdmin && userData.role !== 'admin') {
-                console.log("StatusGuard: Promoting user to admin role");
+              if (isAdminEmail && userData.role !== 'admin') {
+                console.log("StatusGuard: Promoting authorized verified email to admin role");
                 updateDoc(docSnap.ref, { role: 'admin' }).catch(err => console.error("Failed to promote user:", err));
                 userData.role = 'admin';
+              } else if (!isAdminEmail && userData.role === 'admin') {
+                // SECURITY: Demote anyone who isn't an authorized verified admin email
+                console.warn("StatusGuard: Unauthorized admin detected, demoting to user role");
+                updateDoc(docSnap.ref, { role: 'user' }).catch(err => console.error("Failed to demote user:", err));
+                userData.role = 'user';
               }
 
               const trialEndsAt = userData.trial_ends_at || '';
@@ -115,7 +125,7 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               console.warn("StatusGuard: User doc does not exist for UID:", firebaseUser.uid);
               
               // If this is a known admin email, auto-create the profile
-              const isAdminEmail = firebaseUser.email === 'rjjisan744@gmail.com' || firebaseUser.email === 'rjjisan744@innerpower.app' || firebaseUser.email === 'admin@innerpower.app';
+              const isAdminEmail = AUTHORIZED_ADMIN_EMAILS.includes(firebaseUser.email || '') && firebaseUser.emailVerified;
               if (isAdminEmail) {
                 console.log("StatusGuard: Auto-creating missing admin profile");
                 const adminData = {
@@ -176,46 +186,24 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   if (loading || (auth.currentUser && !user)) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 dark:bg-zinc-950 p-4 text-center">
-        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-gray-500 text-sm animate-pulse">
-          {auth.currentUser ? "প্রোফাইল লোড হচ্ছে..." : "প্রবেশ করা হচ্ছে..."}
+      <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 dark:bg-zinc-950 p-6 text-center">
+        <div className="relative mb-8">
+          <div className="w-16 h-16 border-4 border-emerald-500/20 rounded-full" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+        
+        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">প্রোফাইল লোড হচ্ছে</h2>
+        <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs mx-auto mb-8">
+          আপনার অ্যাকাউন্ট যাচাই করা হচ্ছে। অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন।
         </p>
         
-        <div className="mt-8 text-[10px] text-gray-400 font-mono space-y-1">
-          <div>Status: {auth.currentUser ? "Syncing Firestore..." : "Checking Auth..."}</div>
-          {auth.currentUser && <div>UID: {auth.currentUser.uid}</div>}
-        </div>
-
-        <div className="flex flex-col gap-3 mt-8 w-full max-w-xs">
-          <button 
-            onClick={() => {
-              if (auth.currentUser) {
-                // If we have a firebase user, try to construct a minimal user object to bypass
-                const minimalUser: User = {
-                  id: auth.currentUser.uid,
-                  username: auth.currentUser.displayName || 'User',
-                  role: 'user',
-                  status: 'active',
-                  isPaid: false,
-                  trialEndsAt: new Date(Date.now() + 86400000 * 3).toISOString(),
-                  isTrialExpired: false
-                };
-                setUser(minimalUser);
-              }
-              setLoading(false);
-            }}
-            className="w-full py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-500/20"
-          >
-            Force Enter App
-          </button>
-          
-          <div className="flex gap-4 justify-center">
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <div className="flex items-center justify-center gap-6 mt-4">
             <button 
               onClick={() => window.location.reload()}
-              className="text-emerald-600 hover:underline text-[10px] font-bold"
+              className="text-emerald-600 dark:text-emerald-400 hover:underline text-xs font-semibold"
             >
-              Refresh Page
+              রিফ্রেশ করুন
             </button>
             <button 
               onClick={() => {
@@ -223,10 +211,18 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 localStorage.removeItem('user');
                 window.location.href = '/auth';
               }}
-              className="text-red-500 hover:underline text-[10px] font-bold"
+              className="text-red-500 hover:underline text-xs font-semibold"
             >
-              Logout & Reset
+              লগআউট করুন
             </button>
+          </div>
+        </div>
+
+        {/* Hidden technical info for debugging if needed */}
+        <div className="mt-12 pt-8 border-t border-gray-100 dark:border-zinc-800 w-full max-w-xs opacity-0 hover:opacity-100 transition-opacity">
+          <div className="text-[10px] text-gray-400 font-mono space-y-1">
+            <div>Status: {auth.currentUser ? "Syncing Firestore..." : "Checking Auth..."}</div>
+            {auth.currentUser && <div>Session: {auth.currentUser.uid.substring(0, 8)}...</div>}
           </div>
         </div>
       </div>
@@ -244,6 +240,11 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   if (user) {
     if (user.role === 'admin') return <>{children}</>;
+    
+    // If not admin and trying to access admin panel, redirect to home
+    if (location.pathname.startsWith('/admin')) {
+      return <Navigate to="/" replace />;
+    }
     
     if (user.status === 'blocked') {
       return <BlockedAccountPage />;
