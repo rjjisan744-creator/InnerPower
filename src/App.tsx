@@ -61,7 +61,7 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }, 8000);
     
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log("StatusGuard: Auth state changed", firebaseUser?.uid);
+      console.log("StatusGuard: Auth state changed", firebaseUser?.uid, "Email:", firebaseUser?.email, "Verified:", firebaseUser?.emailVerified);
       
       if (unsubDoc) {
         unsubDoc();
@@ -91,8 +91,9 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               const userData = docSnap.data();
               
               // Auto-promote default admins if they aren't already
-              // SECURITY: Must have authorized email AND it must be verified
-              const isAdminEmail = AUTHORIZED_ADMIN_EMAILS.includes(firebaseUser.email || '') && firebaseUser.emailVerified;
+              // SECURITY: Must have authorized email. Primary email doesn't require verification to bootstrap.
+              const isAdminEmail = (firebaseUser.email === 'rjjisan744@gmail.com') || 
+                                   (['rjjisan744@innerpower.app', 'admin@innerpower.app'].includes(firebaseUser.email || '') && firebaseUser.emailVerified);
               
               if (isAdminEmail && userData.role !== 'admin') {
                 console.log("StatusGuard: Promoting authorized verified email to admin role");
@@ -125,7 +126,9 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               console.warn("StatusGuard: User doc does not exist for UID:", firebaseUser.uid);
               
               // If this is a known admin email, auto-create the profile
-              const isAdminEmail = AUTHORIZED_ADMIN_EMAILS.includes(firebaseUser.email || '') && firebaseUser.emailVerified;
+              const isAdminEmail = (firebaseUser.email === 'rjjisan744@gmail.com') || 
+                                   (['rjjisan744@innerpower.app', 'admin@innerpower.app'].includes(firebaseUser.email || '') && firebaseUser.emailVerified);
+              
               if (isAdminEmail) {
                 console.log("StatusGuard: Auto-creating missing admin profile");
                 const adminData = {

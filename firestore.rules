@@ -15,10 +15,12 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
         (
-          request.auth.token.email == "rjjisan744@gmail.com" ||
-          request.auth.token.email == "rjjisan744@innerpower.app" ||
-          request.auth.token.email == "admin@innerpower.app"
-        ) && request.auth.token.email_verified == true;
+          request.auth.token.get('email', '') == "rjjisan744@gmail.com" ||
+          (
+            (request.auth.token.get('email', '') == "rjjisan744@innerpower.app" || request.auth.token.get('email', '') == "admin@innerpower.app") && 
+            request.auth.token.get('email_verified', false) == true
+          )
+        );
     }
 
     function isValidUser(data) {
@@ -41,6 +43,10 @@ service cloud.firestore {
              data.bonus_granted is bool;
     }
 
+    function isImmutable(field) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
+    }
+
     // ===============================================================
     // Rules for Collections
     // ===============================================================
@@ -50,7 +56,16 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
                       (request.resource.data.role == 'user' || isAdmin());
-      allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow update: if isAdmin() || (
+                      isOwner(userId) && 
+                      // Protect critical fields from being changed by the owner
+                      isImmutable('status') &&
+                      isImmutable('is_paid') &&
+                      isImmutable('has_pending_subscription') &&
+                      isImmutable('trial_ends_at') &&
+                      // Allow demotion to user, but block unauthorized promotion to admin
+                      (request.resource.data.role == resource.data.role || request.resource.data.role == 'user')
+                    );
       allow delete: if isAdmin();
     }
 

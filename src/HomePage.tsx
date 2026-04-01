@@ -421,7 +421,7 @@ export const HomePage: React.FC = () => {
   });
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+    <div className="min-h-screen bg-stone-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-x-hidden">
       {/* Resume Reading Dialog */}
       <AnimatePresence>
         {resumeBook && (
@@ -533,26 +533,18 @@ export const HomePage: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Trial Banner */}
-      {!user?.isPaid && trialDaysLeft !== null && (
-        <div className={`py-2 text-center font-bold text-sm transition-colors ${trialDaysLeft <= 1 ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
-          {trialDaysLeft > 0 
-            ? `আপনার Free ট্রায়াল এর মিয়াদ আরও ${trialDaysLeft} দিন বাকি আছে` 
-            : 'আপনার ট্রায়াল এর মিয়াদ শেষ হয়েছে'}
-        </div>
-      )}
-
-      {/* Subscription Overlay */}
-    {user && user.isTrialExpired && !user.isPaid && user.role !== 'admin' && showSubscription && (
-      <SubscriptionOverlay user={user} onClose={() => {
-        localStorage.removeItem('user');
-        navigate('/auth');
-      }} />
-    )}
-
     {/* Header */}
       <header className="bg-white dark:bg-zinc-900 border-b border-black/5 dark:border-white/5 sticky top-0 z-50">
-        <div className="w-full bg-white dark:bg-zinc-900 pt-10 pb-3 px-4 flex flex-col gap-6">
+        {/* Trial Banner */}
+        {!user?.isPaid && trialDaysLeft !== null && (
+          <div className={`py-2 text-center font-bold text-sm transition-colors ${trialDaysLeft <= 1 ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
+            {trialDaysLeft > 0 
+              ? `আপনার Free ট্রায়াল এর মিয়াদ আরও ${trialDaysLeft} দিন বাকি আছে` 
+              : 'আপনার ট্রায়াল এর মিয়াদ শেষ হয়েছে'}
+          </div>
+        )}
+
+        <div className="w-full bg-white dark:bg-zinc-900 pt-6 pb-3 px-4 flex flex-col gap-6">
           <div className="flex justify-between items-start w-full">
             <div className="flex flex-col items-start">
               <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">InnerPower</h1>
@@ -652,6 +644,14 @@ export const HomePage: React.FC = () => {
           </div>
         </div>
       </header>
+      
+      {/* Subscription Overlay */}
+      {user && user.isTrialExpired && !user.isPaid && user.role !== 'admin' && showSubscription && (
+        <SubscriptionOverlay user={user} onClose={() => {
+          localStorage.removeItem('user');
+          navigate('/auth');
+        }} />
+      )}
 
       {/* Floating Action Buttons */}
       <FloatingActions />

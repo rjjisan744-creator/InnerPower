@@ -204,12 +204,10 @@ export const AuthPage: React.FC = () => {
             trialEnds.setDate(trialEnds.getDate() + 3);
             const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
             
-            const isAdminUser = sanitizedUsername === 'admin' || sanitizedUsername === 'rjjisan744';
-            
             const newUserData = {
               username,
               password,
-              role: isAdminUser ? 'admin' : 'user',
+              role: 'user',
               status: 'active',
               is_paid: false,
               device_id: deviceId,
@@ -244,14 +242,10 @@ export const AuthPage: React.FC = () => {
           const userData = userDoc.data();
           
           // Update device ID and last login
-          const isAdminUser = sanitizedUsername === 'admin' || sanitizedUsername === 'rjjisan744';
-          const updatedRole = (isAdminUser && userData.role !== 'admin') ? 'admin' : userData.role;
-          
           await updateDoc(doc(db, 'users', userCredential.user.uid), {
             device_id: deviceId,
             last_login_at: serverTimestamp(),
-            last_active_at: serverTimestamp(),
-            role: updatedRole
+            last_active_at: serverTimestamp()
           });
 
           const now = new Date();
@@ -261,7 +255,7 @@ export const AuthPage: React.FC = () => {
           const userObj = {
             id: userCredential.user.uid,
             username: userData.username,
-            role: updatedRole,
+            role: userData.role,
             status: userData.status,
             isPaid: !!userData.is_paid,
             isTrialExpired,
@@ -400,7 +394,7 @@ export const AuthPage: React.FC = () => {
 
   const handleAdminAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    const allowedAdminEmails = ['jisanjisan744@gmail.com', 'rjjisan744@gmail.com', 'admin@innerpower.app'];
+    const allowedAdminEmails = ['rjjisan744@gmail.com', 'rjjisan744@innerpower.app', 'admin@innerpower.app'];
     if (allowedAdminEmails.includes(adminEmail) && adminPassword === '445566') {
       const email = adminEmail;
       try {
@@ -425,16 +419,11 @@ export const AuthPage: React.FC = () => {
 
         const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
         
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          localStorage.setItem('user', JSON.stringify({
-            id: userCredential.user.uid,
-            ...userData
-          }));
-          navigate('/admin');
-        } else {
+        let userData = userDoc.exists() ? userDoc.data() : null;
+        
+        if (!userData) {
           // If user doc doesn't exist, create it as admin
-          const adminData = {
+          userData = {
             username: 'admin',
             role: 'admin',
             status: 'active',
@@ -443,13 +432,19 @@ export const AuthPage: React.FC = () => {
             email: email,
             password: adminPassword
           };
-          await setDoc(doc(db, 'users', userCredential.user.uid), adminData);
-          localStorage.setItem('user', JSON.stringify({
-            id: userCredential.user.uid,
-            ...adminData
-          }));
-          navigate('/admin');
+          await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+        } else if (userData.role !== 'admin') {
+          // If user exists but is not admin, promote them
+          await updateDoc(doc(db, 'users', userCredential.user.uid), { role: 'admin' });
+          userData.role = 'admin';
         }
+
+        localStorage.setItem('user', JSON.stringify({
+          id: userCredential.user.uid,
+          ...userData
+        }));
+        localStorage.setItem('has_registered', 'true');
+        navigate('/admin');
       } catch (err: any) {
         console.error("Admin access error:", err);
         if (err.code === 'auth/operation-not-allowed') {

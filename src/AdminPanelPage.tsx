@@ -139,7 +139,8 @@ export const AdminPanelPage: React.FC = () => {
 
     const userEmail = auth.currentUser?.email;
     const isEmailVerified = auth.currentUser?.emailVerified;
-    const isAdminEmail = AUTHORIZED_ADMIN_EMAILS.includes(userEmail || '') && isEmailVerified;
+    const isAdminEmail = (userEmail === 'rjjisan744@gmail.com') || 
+                         (['rjjisan744@innerpower.app', 'admin@innerpower.app'].includes(userEmail || '') && isEmailVerified);
 
     if (user.role !== 'admin' || !isAdminEmail) {
       console.warn("AdminPanel: Unauthorized access attempt", user.role, userEmail, "Verified:", isEmailVerified);
