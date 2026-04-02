@@ -58,7 +58,7 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         }
         return prev;
       });
-    }, 8000);
+    }, 5000); // Reduced to 5 seconds for better UX
     
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log("StatusGuard: Auth state changed", firebaseUser?.uid, "Email:", firebaseUser?.email, "Verified:", firebaseUser?.emailVerified);
@@ -77,6 +77,7 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             if (storedUser.id === firebaseUser.uid) {
               console.log("StatusGuard: Using cached user as fallback");
               setUser(storedUser);
+              setLoading(false); // Show the app immediately if we have cached data
             }
           } catch (e) {
             console.error("StatusGuard: Failed to parse cached user", e);
@@ -181,11 +182,10 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     };
   }, []);
 
-  useEffect(() => {
-    if (location.pathname === '/auth' && user) {
-      setUser(null);
-    }
-  }, [location.pathname, user]);
+  // Always allow access to /auth
+  if (location.pathname === '/auth') {
+    return <>{children}</>;
+  }
 
   if (loading || (auth.currentUser && !user)) {
     return (
@@ -198,6 +198,10 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">প্রোফাইল লোড হচ্ছে</h2>
         <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs mx-auto mb-8">
           আপনার অ্যাকাউন্ট যাচাই করা হচ্ছে। অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন।
+          <br />
+          <span className="text-[10px] opacity-70">
+            (যদি অনেক সময় নেয়, তবে আপনার ব্রাউজারের Ad-blocker বা Brave Shields বন্ধ করে রিফ্রেশ করুন)
+          </span>
         </p>
         
         <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -207,6 +211,12 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               className="text-emerald-600 dark:text-emerald-400 hover:underline text-xs font-semibold"
             >
               রিফ্রেশ করুন
+            </button>
+            <button 
+              onClick={() => setLoading(false)}
+              className="text-zinc-400 hover:underline text-[10px] font-semibold"
+            >
+              স্কিপ করুন (জরুরী)
             </button>
             <button 
               onClick={() => {

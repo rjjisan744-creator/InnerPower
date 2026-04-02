@@ -766,7 +766,7 @@ export const AuthPage: React.FC = () => {
               <div className="bg-red-500 text-white text-xs py-2 px-4 rounded-lg text-center font-bold animate-pulse">
                 {error}
               </div>
-              {error.includes("পাসওয়ার্ডটি ভুল") && (
+              {typeof error === 'string' && error.includes("পাসওয়ার্ডটি ভুল") && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
