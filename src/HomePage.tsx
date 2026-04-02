@@ -7,6 +7,7 @@ import { LogOut, Settings, Shield, BookOpen, User as UserIcon, History, Bell, Se
 import { motion, AnimatePresence } from 'motion/react';
 import { FloatingActions } from './components/FloatingActions';
 import { SubscriptionOverlay } from './SubscriptionOverlay';
+import { SupportContactModal } from './components/SupportContactModal';
 import { db, auth } from './firebase';
 import { 
   collection, 
@@ -37,6 +38,8 @@ export const HomePage: React.FC = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadSupportCount, setUnreadSupportCount] = useState(0);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const [trialDaysLeft, setTrialDaysLeft] = useState<number | null>(null);
   const [showPasswordPrompt, setShowPasswordPrompt] = useState<Category | null>(null);
   const [categoryPassword, setCategoryPassword] = useState('');
@@ -162,6 +165,17 @@ export const HomePage: React.FC = () => {
       const unread = notifs.filter((n: any) => n.id > lastSeenId).length;
       setUnreadCount(unread);
     }, (err) => console.error('HomePage: Notifications listener error:', err));
+    
+    // Fetch Unread Support Messages
+    const qSupport = query(
+      collection(db, 'support_messages'),
+      where('user_id', '==', parsedUser.id),
+      where('status', '==', 'unread'),
+      where('sender_role', '==', 'admin')
+    );
+    const unsubSupport = onSnapshot(qSupport, (snapshot) => {
+      setUnreadSupportCount(snapshot.size);
+    }, (err) => console.error('HomePage: Support messages listener error:', err));
 
     // Heartbeat ping to track activity
     const pingInterval = setInterval(() => {
@@ -200,6 +214,7 @@ export const HomePage: React.FC = () => {
       unsubCats();
       unsubSettings();
       unsubNotif();
+      unsubSupport();
       clearInterval(pingInterval);
     };
   }, []);
@@ -573,6 +588,17 @@ export const HomePage: React.FC = () => {
                     </span>
                   )}
                 </button>
+                <button 
+                  onClick={() => setShowSupportModal(true)}
+                  className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-400 relative"
+                >
+                  <MessageSquare size={20} />
+                  {unreadSupportCount > 0 && (
+                    <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900">
+                      {unreadSupportCount}
+                    </span>
+                  )}
+                </button>
                 {user.role === 'admin' && (
                   <button
                     onClick={() => navigate('/admin')}
@@ -655,6 +681,14 @@ export const HomePage: React.FC = () => {
 
       {/* Floating Action Buttons */}
       <FloatingActions />
+
+      {/* Support Modal */}
+      <SupportContactModal 
+        isOpen={showSupportModal} 
+        onClose={() => setShowSupportModal(false)}
+        userId={user.id}
+        username={user.fullName || user.username}
+      />
 
       {/* Notifications Modal */}
       <AnimatePresence>
@@ -772,6 +806,14 @@ export const HomePage: React.FC = () => {
                 <h3 className="text-xl font-black tracking-tight">পাসওয়ার্ড প্রয়োজন</h3>
                 <p className="text-zinc-500 text-sm font-medium">"{showPasswordPrompt.name}" ক্যাটাগরিটি লক করা আছে। এটি দেখতে পাসওয়ার্ড দিন।</p>
                 
+                {showPasswordPrompt.lock_message && (
+                  <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/30">
+                    <p className="text-amber-700 dark:text-amber-400 text-xs font-bold leading-relaxed italic">
+                      "{showPasswordPrompt.lock_message}"
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <input
                     type="password"

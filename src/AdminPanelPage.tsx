@@ -24,6 +24,10 @@ export const AdminPanelPage: React.FC = () => {
   const [isSendingReply, setIsSendingReply] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [lockAllCategories, setLockAllCategories] = useState(false);
+  const [bookReadCounts, setBookReadCounts] = useState<Record<string, number>>({});
+  const [bookReadersMap, setBookReadersMap] = useState<Record<string, string[]>>({});
+  const [selectedBookForReaders, setSelectedBookForReaders] = useState<Book | null>(null);
+  const [totalUniqueReaders, setTotalUniqueReaders] = useState(0);
   const [activeTab, setActiveTab] = useState<'books' | 'users' | 'recycle' | 'settings' | 'referrals' | 'notifications' | 'categories' | 'subscriptions' | 'support'>('books');
   const [userSearch, setUserSearch] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'pending' | 'blocked' | 'active' | 'online' | 'offline' | 'expired'>('all');
@@ -80,7 +84,10 @@ export const AdminPanelPage: React.FC = () => {
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editCategoryPassword, setEditCategoryPassword] = useState('');
+  const [editCategoryLockMessage, setEditCategoryLockMessage] = useState('');
   const [editCategorySortIndex, setEditCategorySortIndex] = useState<number>(0);
+  const [lockCategoryModal, setLockCategoryModal] = useState<{id: string, name: string, currentMessage: string} | null>(null);
+  const [lockMessageInput, setLockMessageInput] = useState('');
 
   // Notification Form State
   const [notifTitle, setNotifTitle] = useState('');
@@ -201,6 +208,32 @@ export const AdminPanelPage: React.FC = () => {
       setIsLoading(false);
     });
 
+    console.log("AdminPanel: Setting up reading history listener...");
+    const unsubReadingHistory = onSnapshot(collection(db, "reading_history"), (snap) => {
+      console.log("AdminPanel: Reading history snapshot received, size:", snap.size);
+      const counts: Record<string, Set<string>> = {};
+      const allUniqueReaders = new Set<string>();
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.book_id && data.user_id) {
+          if (!counts[data.book_id]) counts[data.book_id] = new Set();
+          counts[data.book_id].add(data.user_id);
+          allUniqueReaders.add(data.user_id);
+        }
+      });
+      const finalCounts: Record<string, number> = {};
+      const finalReadersMap: Record<string, string[]> = {};
+      for (const bookId in counts) {
+        finalCounts[bookId] = counts[bookId].size;
+        finalReadersMap[bookId] = Array.from(counts[bookId]);
+      }
+      setBookReadCounts(finalCounts);
+      setBookReadersMap(finalReadersMap);
+      setTotalUniqueReaders(allUniqueReaders.size);
+    }, (err) => {
+      console.error('AdminPanel: Reading history listener error:', err);
+    });
+
     console.log("AdminPanel: Setting up deleted books listener...");
     const unsubDeletedBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", true)), (snap) => {
       console.log("AdminPanel: DeletedBooks snapshot received, size:", snap.size);
@@ -291,6 +324,7 @@ export const AdminPanelPage: React.FC = () => {
     return () => {
       unsubUsers();
       unsubBooks();
+      unsubReadingHistory();
       unsubDeletedBooks();
       unsubCategories();
       unsubNotifications();
@@ -406,6 +440,9 @@ export const AdminPanelPage: React.FC = () => {
       await updateDoc(doc(db, "categories", id), updates);
       setEditingCategoryId(null);
       setEditCategoryPassword('');
+      setEditCategoryLockMessage('');
+      setLockCategoryModal(null);
+      setLockMessageInput('');
     } catch (error) {
       console.error('Error updating category:', error);
     }
@@ -1109,7 +1146,13 @@ export const AdminPanelPage: React.FC = () => {
               <div className="p-4 border-b border-black/5 dark:border-white/5 space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-black tracking-tight">বই তালিকা (Books)</h2>
-                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{books.length} Books</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black text-purple-500 bg-purple-50 dark:bg-purple-900/20 px-2 py-1 rounded-lg uppercase tracking-widest flex items-center gap-1">
+                      <Users size={12} />
+                      মোট পাঠক: {totalUniqueReaders}
+                    </span>
+                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{books.length} Books</span>
+                  </div>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
@@ -1138,6 +1181,13 @@ export const AdminPanelPage: React.FC = () => {
                         <div className="text-[10px] text-zinc-500 font-bold">{book.author || "অজানা লেখক"}</div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[9px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">সিরিয়াল: {book.sort_index || 0}</span>
+                          <button 
+                            onClick={() => setSelectedBookForReaders(book)}
+                            className="text-[9px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter flex items-center gap-1 hover:scale-105 transition-transform"
+                          >
+                            <Users size={10} />
+                            পড়েছেন: {bookReadCounts[book.id] || 0} জন
+                          </button>
                           {book.category?.split(', ').map(cat => (
                             <span key={cat} className="text-[9px] bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">{cat}</span>
                           ))}
@@ -1543,6 +1593,16 @@ export const AdminPanelPage: React.FC = () => {
                                   </button>
                                   <button
                                     onClick={() => {
+                                      setActiveTab('support');
+                                      setSelectedChatUser({ user_id: user.id, username: user.username });
+                                    }}
+                                    className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                    title="মেসেজ পাঠান"
+                                  >
+                                    <MessageSquare size={18} />
+                                  </button>
+                                  <button
+                                    onClick={() => {
                                       handleConfirm(`আপনি কি নিশ্চিতভাবে ${user.username} অ্যাকাউন্টটি ডিলিট করতে চান?`, () => {
                                         handleDeleteUser(user.id);
                                       });
@@ -1657,9 +1717,15 @@ export const AdminPanelPage: React.FC = () => {
                               className="px-2 py-1 rounded bg-white dark:bg-zinc-900 border border-blue-500 text-sm outline-none"
                               placeholder="Password (optional)"
                             />
+                            <textarea
+                              value={editCategoryLockMessage}
+                              onChange={(e) => setEditCategoryLockMessage(e.target.value)}
+                              className="px-2 py-1 rounded bg-white dark:bg-zinc-900 border border-blue-500 text-xs outline-none min-h-[60px]"
+                              placeholder="Lock Message (optional)"
+                            />
                             <div className="flex gap-2">
                               <button
-                                onClick={() => handleUpdateCategory(cat.id, { name: editCategoryName, password: editCategoryPassword, sort_index: editCategorySortIndex })}
+                                onClick={() => handleUpdateCategory(cat.id, { name: editCategoryName, password: editCategoryPassword, lock_message: editCategoryLockMessage, sort_index: editCategorySortIndex })}
                                 className="px-3 py-1 bg-blue-600 text-white text-[10px] font-black uppercase rounded-lg"
                               >
                                 Save
@@ -1676,9 +1742,12 @@ export const AdminPanelPage: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-sm">{cat.name}</span>
                             {cat.is_locked && (
-                              <div className="flex items-center gap-1">
-                                <Lock size={12} className="text-red-500" />
-                                {cat.password && <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">PW Set</span>}
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-1">
+                                  <Lock size={12} className="text-red-500" />
+                                  {cat.password && <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">PW Set</span>}
+                                </div>
+                                {cat.lock_message && <div className="text-[9px] text-zinc-400 font-bold italic line-clamp-1 max-w-[150px]">{cat.lock_message}</div>}
                               </div>
                             )}
                           </div>
@@ -1686,7 +1755,14 @@ export const AdminPanelPage: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleUpdateCategory(cat.id, { is_locked: !cat.is_locked })}
+                          onClick={() => {
+                            if (!cat.is_locked) {
+                              setLockCategoryModal({ id: cat.id, name: cat.name, currentMessage: cat.lock_message || '' });
+                              setLockMessageInput(cat.lock_message || '');
+                            } else {
+                              handleUpdateCategory(cat.id, { is_locked: false });
+                            }
+                          }}
                           className={`p-2 rounded-lg transition-colors ${cat.is_locked ? 'text-red-500 bg-red-50 dark:bg-red-900/20' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
                           title={cat.is_locked ? "আনলক করুন" : "লক করুন"}
                         >
@@ -1697,6 +1773,7 @@ export const AdminPanelPage: React.FC = () => {
                             setEditingCategoryId(cat.id);
                             setEditCategoryName(cat.name);
                             setEditCategoryPassword(cat.password || '');
+                            setEditCategoryLockMessage(cat.lock_message || '');
                             setEditCategorySortIndex(cat.sort_index);
                           }}
                           className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
@@ -2405,12 +2482,25 @@ export const AdminPanelPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <button 
-                    onClick={() => setSelectedUser(null)}
-                    className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  >
-                    Close Profile
-                  </button>
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => {
+                        setSelectedUser(null);
+                        setActiveTab('support');
+                        setSelectedChatUser({ user_id: selectedUser.id, username: selectedUser.username });
+                      }}
+                      className="flex-1 py-4 bg-blue-500 text-white rounded-2xl font-black transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                      <MessageSquare size={20} />
+                      Message
+                    </button>
+                    <button 
+                      onClick={() => setSelectedUser(null)}
+                      className="flex-1 py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl font-black transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      Close Profile
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             </div>
@@ -2778,6 +2868,129 @@ export const AdminPanelPage: React.FC = () => {
               </div>
               <span className="text-sm font-bold">{toast.message}</span>
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {selectedBookForReaders && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden border border-black/5 dark:border-white/5 flex flex-col max-h-[80vh]"
+              >
+                <div className="p-6 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/20 rounded-xl flex items-center justify-center text-purple-600">
+                      <Users size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black tracking-tight leading-tight">{selectedBookForReaders.title}</h3>
+                      <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">পাঠক তালিকা ({bookReadCounts[selectedBookForReaders.id] || 0} জন)</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedBookForReaders(null)}
+                    className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                  {(bookReadersMap[selectedBookForReaders.id] || []).map(userId => {
+                    const reader = users.find(u => u.id === userId);
+                    return (
+                      <div key={userId} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-black/5 dark:border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full overflow-hidden border border-black/5 dark:border-white/5 bg-white dark:bg-zinc-800">
+                            <img 
+                              src={reader?.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${reader?.username || userId}`} 
+                              alt="" 
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                          <div>
+                            <div className="font-black text-sm">{reader?.fullName || reader?.username || "Unknown User"}</div>
+                            <div className="text-[10px] text-zinc-500 font-bold">@{reader?.username || "unknown"}</div>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setSelectedUser(reader || null);
+                            setSelectedBookForReaders(null);
+                          }}
+                          className="px-3 py-1.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all"
+                        >
+                          প্রোফাইল
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {(!bookReadersMap[selectedBookForReaders.id] || bookReadersMap[selectedBookForReaders.id].length === 0) && (
+                    <div className="text-center py-12 text-zinc-400 font-bold text-sm">এখনো কেউ পড়েনি</div>
+                  )}
+                </div>
+                
+                <div className="p-4 border-t border-black/5 dark:border-white/5">
+                  <button 
+                    onClick={() => setSelectedBookForReaders(null)}
+                    className="w-full py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-2xl font-black uppercase tracking-widest"
+                  >
+                    বন্ধ করুন
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Lock Category Modal */}
+        <AnimatePresence>
+          {lockCategoryModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden border border-black/5 dark:border-white/5"
+              >
+                <div className="p-8 text-center space-y-6">
+                  <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto text-red-600">
+                    <Lock size={32} />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-black tracking-tight">ক্যাটাগরি লক করুন</h3>
+                    <p className="text-zinc-500 dark:text-zinc-400 text-sm font-bold">"{lockCategoryModal.name}" লক করার সময় একটি মেসেজ দিন (ঐচ্ছিক)</p>
+                  </div>
+                  
+                  <textarea
+                    value={lockMessageInput}
+                    onChange={(e) => setLockMessageInput(e.target.value)}
+                    placeholder="মেসেজ লিখুন (যেমন: এই ক্যাটাগরিটি শুধুমাত্র প্রিমিয়াম মেম্বারদের জন্য)"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-2 border-transparent focus:border-red-500 outline-none transition-all text-sm font-bold min-h-[100px]"
+                    autoFocus
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setLockCategoryModal(null)}
+                      className="py-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white text-sm font-black uppercase tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      বাতিল
+                    </button>
+                    <button
+                      onClick={() => handleUpdateCategory(lockCategoryModal.id, { is_locked: true, lock_message: lockMessageInput })}
+                      className="py-4 rounded-2xl bg-red-600 text-white text-sm font-black uppercase tracking-widest hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                    >
+                      লক করুন
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
           )}
         </AnimatePresence>
 

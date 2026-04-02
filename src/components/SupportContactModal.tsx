@@ -19,7 +19,7 @@ interface SupportContactModalProps {
   username?: string;
 }
 
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen, onClose, userId, username }) => {
@@ -43,6 +43,15 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
       );
       const unsub = onSnapshot(q, (snap) => {
         setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        
+        // Mark admin messages as read
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => {
+          if (d.data().status === 'unread' && d.data().sender_role === 'admin') {
+            batch.update(d.ref, { status: 'read' });
+          }
+        });
+        batch.commit();
       });
       return () => unsub();
     }

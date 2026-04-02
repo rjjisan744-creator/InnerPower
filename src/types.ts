@@ -3,6 +3,7 @@ export interface Category {
   name: string;
   is_locked: boolean;
   password?: string;
+  lock_message?: string;
   sort_index: number;
   created_at: string;
 }
