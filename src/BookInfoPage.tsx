@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Book } from './types';
 import { ArrowLeft, BookOpen, User, Heart } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useApp } from './AppContext';
 
 import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
@@ -39,6 +39,13 @@ export const BookInfoPage: React.FC = () => {
     return () => unsub();
   }, [id, user?.id]);
 
+  const [toast, setToast] = useState<{ msg: string, type: 'success' | 'error' } | null>(null);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const toggleWishlist = async () => {
     if (!user || !book || !id) return;
     setLoadingWishlist(true);
@@ -46,17 +53,18 @@ export const BookInfoPage: React.FC = () => {
       const wishlistRef = doc(db, "wishlist", `${user.id}_${id}`);
       if (inWishlist) {
         await deleteDoc(wishlistRef);
-        setInWishlist(false);
+        showToast('উইশলিস্ট থেকে সরানো হয়েছে');
       } else {
         await setDoc(wishlistRef, {
           user_id: user.id,
           book_id: id,
           created_at: new Date().toISOString()
         });
-        setInWishlist(true);
+        showToast('উইশলিস্টে যোগ করা হয়েছে!');
       }
     } catch (error) {
       console.error('Error toggling wishlist:', error);
+      showToast('সমস্যা হয়েছে, আবার চেষ্টা করুন', 'error');
     } finally {
       setLoadingWishlist(false);
     }
@@ -156,6 +164,24 @@ export const BookInfoPage: React.FC = () => {
       <footer className="py-12 text-center opacity-30 text-[8px] font-black tracking-[0.3em] uppercase">
         DEVELOPED BY RJ JISAN | FORUM JESSORE JHIKARGACHA
       </footer>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100]"
+          >
+            <div className={`px-6 py-3 rounded-2xl shadow-2xl font-bold text-sm ${
+              toast.type === 'success' ? 'bg-zinc-900 text-white' : 'bg-red-500 text-white'
+            }`}>
+              {toast.msg}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

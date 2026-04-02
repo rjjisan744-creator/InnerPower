@@ -110,6 +110,10 @@ export const HomePage: React.FC = () => {
           ...parsedUser,
           ...data,
           id: docSnap.id,
+          fullName: data.full_name || parsedUser.fullName,
+          profilePicture: data.profile_picture || parsedUser.profilePicture,
+          referralCode: data.referral_code || parsedUser.referralCode,
+          referralCount: data.referral_count || 0,
           isPaid: !!data.is_paid,
           hasPendingSubscription: !!data.has_pending_subscription,
           isTrialExpired

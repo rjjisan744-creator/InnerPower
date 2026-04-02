@@ -27,7 +27,8 @@ import {
   ChevronLeft,
   MoreVertical,
   FileText,
-  MessageSquare
+  MessageSquare,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Note, Book } from './types';
@@ -105,7 +106,7 @@ export const ProfilePage: React.FC = () => {
       const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
       setEditForm({
-        fullName: parsedUser.fullName || parsedUser.username,
+        fullName: parsedUser.fullName || '',
         email: parsedUser.email || ''
       });
 
@@ -122,10 +123,24 @@ export const ProfilePage: React.FC = () => {
             ...parsedUser,
             ...userData,
             id: docSnap.id,
+            fullName: userData.full_name || parsedUser.fullName,
+            profilePicture: userData.profile_picture || parsedUser.profilePicture,
+            referralCode: userData.referral_code || parsedUser.referralCode,
+            referralCount: userData.referral_count || 0,
             isPaid: !!userData.is_paid,
             trialEndsAt: userData.trial_ends_at,
             isTrialExpired: userData.trial_ends_at ? safeDate(userData.trial_ends_at) < new Date() : false
           };
+
+          // If referral code is missing in Firestore, generate one
+          if (!userData.referral_code) {
+            const newReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+            updateDoc(doc(db, "users", docSnap.id), {
+              referral_code: newReferralCode
+            }).catch(err => console.error("Error generating referral code:", err));
+            updatedUser.referralCode = newReferralCode;
+          }
+
           setUser(updatedUser);
           localStorage.setItem('user', JSON.stringify(updatedUser));
         } else {
@@ -282,8 +297,8 @@ export const ProfilePage: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('Image size must be less than 2MB', 'error');
+    if (file.size > 500 * 1024) {
+      showToast('Image size must be less than 500KB', 'error');
       return;
     }
 
@@ -294,6 +309,7 @@ export const ProfilePage: React.FC = () => {
       
       try {
         await updateDoc(doc(db, "users", user.id), { profile_picture: base64String });
+        saveToLocalStorage({ profilePicture: base64String });
         showToast('Profile picture updated!');
       } catch (error) {
         console.warn('Sync failed');
@@ -312,6 +328,10 @@ export const ProfilePage: React.FC = () => {
     try {
       await updateDoc(doc(db, "users", user.id), { 
         full_name: editForm.fullName,
+        email: editForm.email
+      });
+      saveToLocalStorage({ 
+        fullName: editForm.fullName,
         email: editForm.email
       });
       setIsEditing(false);
@@ -341,6 +361,7 @@ export const ProfilePage: React.FC = () => {
 
   const fetchWishlist = async () => {
     if (!user) return;
+    setShowWishlist(true);
     setLoadingList(true);
     try {
       const q = query(collection(db, "wishlist"), where("user_id", "==", user.id));
@@ -350,12 +371,13 @@ export const ProfilePage: React.FC = () => {
       if (bookIds.length === 0) {
         setWishlistBooks([]);
       } else {
+        // Fetch only needed books to be more efficient
         const booksSnap = await getDocs(collection(db, "books"));
         const allBooks = booksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book));
         setWishlistBooks(allBooks.filter(b => bookIds.includes(b.id)));
       }
-      setShowWishlist(true);
     } catch (e) {
+      console.error('Wishlist error:', e);
       showToast('Failed to load wishlist', 'error');
     } finally {
       setLoadingList(false);
@@ -364,11 +386,21 @@ export const ProfilePage: React.FC = () => {
 
   const fetchHistory = async () => {
     if (!user) return;
+    setShowHistory(true);
     setLoadingList(true);
     try {
-      const q = query(collection(db, "reading_history"), where("user_id", "==", user.id), orderBy("read_at", "desc"));
+      // Remove orderBy to avoid index requirement if not created yet
+      const q = query(collection(db, "reading_history"), where("user_id", "==", user.id));
       const snap = await getDocs(q);
       const historyData = snap.docs.map(doc => doc.data());
+      
+      // Sort manually in memory
+      historyData.sort((a, b) => {
+        const dateA = a.read_at ? new Date(a.read_at).getTime() : 0;
+        const dateB = b.read_at ? new Date(b.read_at).getTime() : 0;
+        return dateB - dateA;
+      });
+
       const bookIds = historyData.map(h => h.book_id);
 
       if (bookIds.length === 0) {
@@ -382,8 +414,8 @@ export const ProfilePage: React.FC = () => {
         }).filter(Boolean) as Book[];
         setHistoryBooks(historyList);
       }
-      setShowHistory(true);
     } catch (e) {
+      console.error('History error:', e);
       showToast('Failed to load history', 'error');
     } finally {
       setLoadingList(false);
@@ -412,7 +444,7 @@ export const ProfilePage: React.FC = () => {
   const profileData = {
     fullName: user.fullName || user.username,
     email: user.email || "No email set",
-    profilePicture: user.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
+    profilePicture: user.profilePicture || user.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
     booksReadCount: user.booksReadCount || 0,
     currentlyReading: user.currentlyReading || "None",
     trialDaysLeft: (() => {
@@ -483,7 +515,28 @@ export const ProfilePage: React.FC = () => {
         </div>
       )}
 
-      <main className="max-w-2xl mx-auto p-4 md:p-8 space-y-8">
+      <main className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
+        {/* Profile Update Instruction */}
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 rounded-2xl p-4 flex items-center gap-4 shadow-sm"
+        >
+          <div className="p-2 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-500/20">
+            <Edit3 size={20} />
+          </div>
+          <div>
+            <h4 className="text-sm font-black text-emerald-900 dark:text-emerald-100 tracking-tight">নিজের প্রোফাইল আপডেট করুন</h4>
+            <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">আপনার তথ্যগুলো সঠিক রাখুন এবং প্রোফাইলটি সাজিয়ে নিন।</p>
+          </div>
+          <button 
+            onClick={() => setIsEditing(true)}
+            className="ml-auto px-4 py-2 bg-emerald-500 text-white text-xs font-black rounded-xl shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all"
+          >
+            এডিট করুন
+          </button>
+        </motion.div>
+
         {/* Profile Header Card */}
         <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-8 shadow-xl border border-black/5 dark:border-white/5 text-center relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl rounded-full -mr-16 -mt-16"></div>
@@ -537,15 +590,24 @@ export const ProfilePage: React.FC = () => {
 
                 <form onSubmit={handleSaveProfile} className="space-y-6">
                   <div>
-                    <label className="block text-[10px] font-black text-zinc-400 mb-2 uppercase tracking-[0.2em]">Full Name</label>
+                    <label className="block text-[10px] font-black text-zinc-400 mb-2 uppercase tracking-[0.2em]">Username (Login ID)</label>
+                    <div className="w-full p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border-2 border-zinc-100 dark:border-zinc-800 text-zinc-400 font-bold cursor-not-allowed flex items-center justify-between">
+                      <span>{user?.username}</span>
+                      <Shield size={14} className="opacity-50" />
+                    </div>
+                    <p className="mt-2 text-[9px] font-medium text-zinc-400 italic">* ইউজারনেম পরিবর্তন করা সম্ভব নয় কারণ এটি লগইন করার জন্য প্রয়োজন।</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-zinc-400 mb-2 uppercase tracking-[0.2em]">Full Name (Display Name)</label>
                     <input 
                       type="text"
                       value={editForm.fullName}
                       onChange={(e) => setEditForm({...editForm, fullName: e.target.value})}
                       className="w-full p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-2 border-transparent focus:border-emerald-500/50 outline-none transition-all font-bold"
-                      placeholder="Enter your full name"
-                      required
+                      placeholder="আপনার পুরো নাম লিখুন"
                     />
+                    <p className="mt-2 text-[9px] font-medium text-zinc-400 italic">* এটি শুধুমাত্র আপনার প্রোফাইলে দেখানোর জন্য ব্যবহার করা হবে।</p>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-zinc-400 mb-2 uppercase tracking-[0.2em]">Email Address</label>
@@ -627,7 +689,12 @@ export const ProfilePage: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
-                  {(showWishlist ? wishlistBooks : historyBooks).length === 0 ? (
+                  {loadingList ? (
+                    <div className="py-12 text-center">
+                      <div className="animate-spin w-10 h-10 border-4 border-zinc-200 border-t-zinc-900 dark:border-zinc-800 dark:border-t-white rounded-full mx-auto mb-4" />
+                      <p className="text-zinc-400 font-bold text-sm">লোড হচ্ছে...</p>
+                    </div>
+                  ) : (showWishlist ? wishlistBooks : historyBooks).length === 0 ? (
                     <div className="py-12 text-center">
                       <div className="w-16 h-16 bg-zinc-50 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
                         <BookOpen className="text-zinc-300" size={32} />

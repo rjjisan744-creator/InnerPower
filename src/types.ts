@@ -32,6 +32,7 @@ export interface User {
   fullName?: string;
   email?: string;
   profilePicture?: string;
+  profile_picture?: string;
   booksReadCount?: number;
   currentlyReading?: string;
   referralCode?: string;
