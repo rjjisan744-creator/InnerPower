@@ -8,7 +8,8 @@ import { auth, db } from './firebase';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  fetchSignInMethodsForEmail
 } from 'firebase/auth';
 import { 
   doc, 
@@ -106,27 +107,58 @@ export const AuthPage: React.FC = () => {
     const timer = setTimeout(async () => {
       setIsCheckingUsername(true);
       try {
-        const usernameDoc = await getDoc(doc(db, "usernames", username.toLowerCase()));
-        setIsUsernameAvailable(!usernameDoc.exists());
+        const sanitized = username.toLowerCase().replace(/\s+/g, '');
+        if (sanitized.length < 3) {
+          setIsUsernameAvailable(null);
+          setIsCheckingUsername(false);
+          return;
+        }
         
+        // Check database (usernames collection)
+        const usernameDoc = await getDoc(doc(db, "usernames", sanitized));
         if (usernameDoc.exists()) {
+          setIsUsernameAvailable(false);
           const suggestions = [
-            `${username}${Math.floor(Math.random() * 100)}`,
-            `${username}_pro`,
-            `${username}${new Date().getFullYear()}`
+            `${sanitized}${Math.floor(Math.random() * 999)}`,
+            `${sanitized}_${Math.random().toString(36).substring(2, 5)}`,
+            `user_${sanitized}`,
+            `${sanitized}24`
           ];
           setUsernameSuggestions(suggestions);
-        } else {
-          setUsernameSuggestions([]);
+          setIsCheckingUsername(false);
+          return;
         }
+
+        // Check Auth system
+        const email = sanitized.includes('@') ? sanitized : `${sanitized}@innerpower.app`;
+        const methods = await fetchSignInMethodsForEmail(auth, email);
+        if (methods.length > 0) {
+          setIsUsernameAvailable(false);
+          const suggestions = [
+            `${sanitized}${Math.floor(Math.random() * 999)}`,
+            `${sanitized}_${Math.random().toString(36).substring(2, 5)}`,
+            `user_${sanitized}`,
+            `${sanitized}24`
+          ];
+          setUsernameSuggestions(suggestions);
+          setIsCheckingUsername(false);
+          return;
+        }
+
+        setIsUsernameAvailable(true);
+        setUsernameSuggestions([]);
+        setError(''); // Clear any registration errors if username becomes available
       } catch (err) {
         console.error("Error checking username:", err);
       } finally {
         setIsCheckingUsername(false);
       }
-    }, 500);
+    }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // We don't reset isCheckingUsername here because the next effect will start soon
+    };
   }, [username, isLogin]);
 
   useEffect(() => {
@@ -184,12 +216,42 @@ export const AuthPage: React.FC = () => {
     }
     
     if (!isLogin && isUsernameAvailable === false) {
-      setError("দয়া করে একটি এভেইলেবল ইউজারনেম পছন্দ করুন");
+      setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
       return;
     }
     
     const deviceId = getDeviceId();
     const sanitizedUsername = username.toLowerCase().replace(/\s+/g, '');
+    
+    if (!isLogin) {
+      setIsCheckingUsername(true);
+      try {
+        // 1. Check usernames collection
+        const usernameRef = doc(db, 'usernames', sanitizedUsername);
+        const usernameDoc = await getDoc(usernameRef);
+        if (usernameDoc.exists()) {
+          setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
+          setIsUsernameAvailable(false);
+          setIsCheckingUsername(false);
+          return;
+        }
+
+        // 2. Check Auth system
+        const emailCheck = `${sanitizedUsername}@innerpower.app`;
+        const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
+        if (methods.length > 0) {
+          setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
+          setIsUsernameAvailable(false);
+          setIsCheckingUsername(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Error double checking username:", err);
+      } finally {
+        setIsCheckingUsername(false);
+      }
+    }
+
     const email = sanitizedUsername.includes('@') ? sanitizedUsername : `${sanitizedUsername}@innerpower.app`;
 
     try {
@@ -205,7 +267,7 @@ export const AuthPage: React.FC = () => {
             const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
             
             const newUserData = {
-              username,
+              username: sanitizedUsername,
               password,
               role: 'user',
               status: 'active',
@@ -280,6 +342,8 @@ export const AuthPage: React.FC = () => {
             setError("Firebase সেটিংস সমস্যা: দয়া করে Firebase Console থেকে Email/Password মেথডটি Enable করুন। এটি ছাড়া অ্যাপ কাজ করবে না।");
           } else if (authErr.code === 'auth/too-many-requests') {
             setError("অনেকবার ভুল চেষ্টা করা হয়েছে। অ্যাকাউন্টটি সাময়িকভাবে লক করা হয়েছে। কিছুক্ষণ পর চেষ্টা করুন।");
+          } else if (authErr.code === 'auth/network-request-failed') {
+            setError("ইন্টারনেট সংযোগে সমস্যা হচ্ছে। দয়া করে আপনার ইন্টারনেট কানেকশন চেক করুন অথবা কোনো অ্যাড-ব্লকার (Ad-blocker) থাকলে তা বন্ধ করে আবার চেষ্টা করুন।");
           } else {
             setError(`লগইন করতে সমস্যা হচ্ছে: ${authErr.message}`);
           }
@@ -287,6 +351,15 @@ export const AuthPage: React.FC = () => {
       } else {
         // Register
         try {
+          // Early check for username availability in Firestore
+          const usernameRef = doc(db, 'usernames', sanitizedUsername);
+          const usernameDoc = await getDoc(usernameRef);
+          if (usernameDoc.exists()) {
+            setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
+            setIsUsernameAvailable(false);
+            return;
+          }
+
           // Check if device already has an account to prevent multi-accounts
           const deviceRef = doc(db, 'device_ids', deviceId);
           const deviceDoc = await getDoc(deviceRef);
@@ -299,7 +372,7 @@ export const AuthPage: React.FC = () => {
           const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
           
           const userData = {
-            username,
+            username: sanitizedUsername,
             password, // Store password as requested for admin view
             role: 'user',
             status: isMultiAccount ? 'blocked' : 'active',
@@ -316,7 +389,7 @@ export const AuthPage: React.FC = () => {
           try {
             // Use a transaction to ensure username is unique and recorded
             await runTransaction(db, async (transaction) => {
-              const usernameRef = doc(db, 'usernames', username.toLowerCase());
+              const usernameRef = doc(db, 'usernames', sanitizedUsername);
               const usernameDoc = await transaction.get(usernameRef);
               
               if (usernameDoc.exists()) {
@@ -330,7 +403,7 @@ export const AuthPage: React.FC = () => {
               if (!isMultiAccount) {
                 transaction.set(deviceRef, {
                   uid: userCredential.user.uid,
-                  username,
+                  username: sanitizedUsername,
                   created_at: serverTimestamp()
                 });
               }
@@ -358,7 +431,7 @@ export const AuthPage: React.FC = () => {
                       referrer_id: referrerDoc.id,
                       referrer_username: referrerData.username || 'Unknown',
                       referee_id: userCredential.user.uid,
-                      referee_username: username,
+                      referee_username: sanitizedUsername,
                       bonus_granted: false,
                       created_at: serverTimestamp()
                     });
@@ -383,17 +456,56 @@ export const AuthPage: React.FC = () => {
           } catch (fsErr: any) {
             const detailedError = handleFirestoreError(fsErr, OperationType.WRITE, `users/${userCredential.user.uid}`);
             setError(`ডাটাবেসে তথ্য সেভ করতে সমস্যা হয়েছে: ${detailedError}`);
+            
+            // Cleanup orphaned Auth account if Firestore setup failed
+            try {
+              await userCredential.user.delete();
+              console.log("Cleaned up orphaned Auth account after Firestore failure");
+            } catch (delErr) {
+              console.error("Failed to delete orphaned user:", delErr);
+            }
           }
         } catch (authErr: any) {
           console.error("Registration error:", authErr);
-          if (authErr.code === 'auth/email-already-in-use') {
-            setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
-          } else if (authErr.code === 'auth/operation-not-allowed') {
-            setError("Firebase সেটিংস সমস্যা: দয়া করে Firebase Console থেকে Email/Password মেথডটি Enable করুন। এটি ছাড়া রেজিস্ট্রেশন কাজ করবে না।");
-          } else if (authErr.code === 'auth/weak-password') {
+          const errCode = authErr?.code || '';
+          const errMsg = authErr?.message || String(authErr);
+          const isEmailInUse = errCode === 'auth/email-already-in-use' || 
+                               errMsg.includes('auth/email-already-in-use') ||
+                               errCode === 'auth/account-exists-with-different-credential';
+          
+          if (isEmailInUse) {
+            setError(
+              <div className="flex flex-col items-center gap-2">
+                <span>দুঃখিত, এই ইউজারনেমটি আমাদের সিস্টেমে ইতিমধ্যে নিবন্ধিত।</span>
+                <button 
+                  onClick={() => setIsLogin(true)}
+                  className="bg-white/20 hover:bg-white/30 px-4 py-1 rounded-full text-[10px] transition-all"
+                >
+                  সরাসরি লগইন করুন
+                </button>
+              </div>
+            );
+            setIsUsernameAvailable(false);
+            
+            // Generate better suggestions
+            const suggestions = [
+              `${sanitizedUsername}${Math.floor(Math.random() * 999)}`,
+              `${sanitizedUsername}_${Math.random().toString(36).substring(2, 5)}`,
+              `user_${sanitizedUsername}`,
+              `${sanitizedUsername}24`
+            ];
+            setUsernameSuggestions(suggestions);
+            
+            // Scroll to top to show error
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else if (errCode === 'auth/operation-not-allowed') {
+            setError("Firebase সেটিংস সমস্যা: দয়া করে Firebase Console থেকে Email/Password মেথডটি Enable করুন।");
+          } else if (errCode === 'auth/weak-password') {
             setError("পাসওয়ার্ডটি খুব দুর্বল। কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড দিন।");
+          } else if (errCode === 'auth/network-request-failed') {
+            setError("ইন্টারনেট সংযোগ নেই। দয়া করে আপনার কানেকশন চেক করুন।");
           } else {
-            setError(`রেজিস্ট্রেশন করতে সমস্যা হচ্ছে: ${authErr.message}`);
+            setError(`রেজিস্ট্রেশন করতে সমস্যা হচ্ছে: ${errMsg}`);
           }
         }
       }
@@ -561,7 +673,20 @@ export const AuthPage: React.FC = () => {
               type="text"
               required
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\s+/g, '');
+                setUsername(val);
+                setError('');
+                // Reset availability status immediately while typing for a 'live' feel
+                if (!isLogin) {
+                  setIsUsernameAvailable(null);
+                  if (val.length >= 3) {
+                    setIsCheckingUsername(true);
+                  } else {
+                    setIsCheckingUsername(false);
+                  }
+                }
+              }}
               className={`w-full px-4 py-2 rounded-xl border ${
                 !isLogin && isUsernameAvailable === false 
                   ? 'border-red-500 ring-1 ring-red-500' 
@@ -575,21 +700,30 @@ export const AuthPage: React.FC = () => {
                 {isCheckingUsername ? (
                   <p className="text-[10px] text-zinc-500 animate-pulse">ইউজারনেম চেক করা হচ্ছে...</p>
                 ) : isUsernameAvailable === false ? (
-                  <div className="space-y-2">
-                    <p className="text-[10px] text-red-500 font-bold">এই ইউজারনেমটি ইতিমধ্যে নেওয়া হয়েছে। অন্য একটি চেষ্টা করুন।</p>
+                  <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20 space-y-3">
+                    <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                      <X size={14} className="shrink-0" />
+                      <p className="text-[11px] font-black uppercase tracking-tight">এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
+                    </div>
+                    
                     {usernameSuggestions.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        <span className="text-[10px] text-zinc-500">সাজেশন:</span>
-                        {usernameSuggestions.map((suggestion) => (
-                          <button
-                            key={suggestion}
-                            type="button"
-                            onClick={() => setUsername(suggestion)}
-                            className="text-[10px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-100 transition-colors"
-                          >
-                            {suggestion}
-                          </button>
-                        ))}
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400">নিচের নামগুলো চেষ্টা করতে পারেন:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {usernameSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => {
+                                setUsername(suggestion);
+                                setError('');
+                              }}
+                              className="text-[10px] font-black bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all shadow-sm active:scale-95"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

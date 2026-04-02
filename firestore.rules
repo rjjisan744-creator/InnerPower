@@ -52,9 +52,9 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow list: if isAdmin();
+      allow list: if isAuthenticated();
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) && 
                       (request.resource.data.role == 'user' || isAdmin());
       allow update: if isAdmin() || (
                       isOwner(userId) && 
