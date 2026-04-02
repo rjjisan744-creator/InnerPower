@@ -17,12 +17,13 @@ interface SupportContactModalProps {
   onClose: () => void;
   userId?: number | string;
   username?: string;
+  fullName?: string;
 }
 
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
-export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen, onClose, userId, username }) => {
+export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen, onClose, userId, username, fullName }) => {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -74,6 +75,7 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
       await addDoc(collection(db, "support_messages"), {
         user_id: userId,
         username: username || 'Guest',
+        full_name: fullName || username || 'Guest',
         message: currentMessage,
         sender_role: 'user',
         status: 'unread',

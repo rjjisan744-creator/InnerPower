@@ -59,7 +59,9 @@ export const BlockedAccountPage: React.FC = () => {
         <div className="space-y-3">
           <h1 className="text-3xl font-black tracking-tighter text-rose-600">অ্যাকাউন্ট ব্লকড!</h1>
           <p className="text-zinc-500 dark:text-zinc-400 font-bold leading-relaxed">
-            আপনার অ্যাকাউন্টটি এডমিন দ্বারা ব্লক করা হয়েছে। কোনো ভুল বোঝাবুঝি হলে বা বিস্তারিত জানতে সাপোর্টে যোগাযোগ করুন।
+            {user.block_reason === 'multi_account' 
+              ? 'আপনার ডিভাইসে ইতিমধ্যে একটি অ্যাকাউন্ট রয়েছে। একাধিক অ্যাকাউন্ট খোলার কারণে আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে।'
+              : 'আপনার অ্যাকাউন্টটি এডমিন দ্বারা ব্লক করা হয়েছে। কোনো ভুল বোঝাবুঝি হলে বা বিস্তারিত জানতে সাপোর্টে যোগাযোগ করুন।'}
           </p>
         </div>
 

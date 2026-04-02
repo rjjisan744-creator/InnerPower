@@ -24,7 +24,8 @@
         "notes": { "type": "string" },
         "full_name": { "type": "string" },
         "email": { "type": "string" },
-        "profile_picture": { "type": "string" }
+        "profile_picture": { "type": "string" },
+        "block_reason": { "type": "string" }
       },
       "required": ["username", "password"]
     },
@@ -132,6 +133,7 @@
       "properties": {
         "user_id": { "type": "string" },
         "username": { "type": "string" },
+        "full_name": { "type": "string" },
         "sender_role": { "type": "string", "enum": ["user", "admin"] },
         "message": { "type": "string" },
         "status": { "type": "string", "enum": ["unread", "read"] },
@@ -167,6 +169,17 @@
       "type": "object",
       "properties": {
         "uid": { "type": "string" }
+      },
+      "required": ["uid"]
+    },
+    "DeviceID": {
+      "title": "DeviceID",
+      "description": "Mapping of device IDs to users to prevent multiple accounts",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["uid"]
     }
@@ -241,6 +254,10 @@
         }
       },
       "description": "User wishlist"
+    },
+    "/device_ids/{deviceId}": {
+      "schema": "DeviceID",
+      "description": "Device ID mapping"
     }
   }
 }

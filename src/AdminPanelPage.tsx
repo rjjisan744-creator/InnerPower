@@ -18,7 +18,7 @@ export const AdminPanelPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [supportMessages, setSupportMessages] = useState<any[]>([]);
-  const [selectedChatUser, setSelectedChatUser] = useState<{user_id: number | string, username: string} | null>(null);
+  const [selectedChatUser, setSelectedChatUser] = useState<{user_id: number | string, username: string, full_name?: string} | null>(null);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [replyMessage, setReplyMessage] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
@@ -179,6 +179,9 @@ export const AdminPanelPage: React.FC = () => {
         return {
           id: doc.id,
           ...d,
+          fullName: d.full_name,
+          email: d.email,
+          profilePicture: d.profile_picture,
           isPaid: d.is_paid || false,
           hasPendingSubscription: d.has_pending_subscription || false,
           trialEndsAt: d.trial_ends_at || '',
@@ -281,10 +284,16 @@ export const AdminPanelPage: React.FC = () => {
           userGroups[m.user_id] = {
             user_id: m.user_id,
             username: m.username,
+            full_name: m.full_name,
             last_message: m.message,
             last_message_at: m.created_at,
             unread_count: messages.filter((msg: any) => msg.user_id === m.user_id && msg.status === 'unread' && msg.sender_role === 'user').length
           };
+        } else {
+          // If we already have the group but it's missing name/username (e.g. from an admin reply),
+          // and this message has it, update it.
+          if (!userGroups[m.user_id].username && m.username) userGroups[m.user_id].username = m.username;
+          if (!userGroups[m.user_id].full_name && m.full_name) userGroups[m.user_id].full_name = m.full_name;
         }
       });
       setSupportMessages(Object.values(userGroups));
@@ -370,6 +379,7 @@ export const AdminPanelPage: React.FC = () => {
       await addDoc(collection(db, "support_messages"), {
         user_id: selectedChatUser.user_id,
         username: selectedChatUser.username,
+        full_name: selectedChatUser.full_name || selectedChatUser.username,
         message: currentReply,
         sender_role: 'admin',
         status: 'read',
@@ -1326,8 +1336,18 @@ export const AdminPanelPage: React.FC = () => {
                                 {user.last_active_at && (new Date().getTime() - safeDate(user.last_active_at).getTime() < 300000) && (
                                   <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">Active Now</span>
                                 )}
+                                {user.status === 'blocked' && user.block_reason === 'multi_account' && (
+                                  <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 px-1.5 py-0.5 rounded">Multi-Account</span>
+                                )}
                               </div>
-                              <div className="text-[11px] text-zinc-500 font-bold">{user.email || "No email set"}</div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <div className="text-[11px] text-zinc-500 font-bold flex items-center gap-1">
+                                  <UserIcon size={10} className="text-zinc-400" />
+                                  {user.username}
+                                </div>
+                                <div className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700"></div>
+                                <div className="text-[11px] text-zinc-500 font-bold">{user.email || "No email set"}</div>
+                              </div>
                               {user.last_active_at && (
                                 <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">
                                   Last Active: {safeDate(user.last_active_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
@@ -1818,16 +1838,19 @@ export const AdminPanelPage: React.FC = () => {
                   <div key={sub.id} className="p-6 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col">
                           <span className="font-black text-sm">{sub.full_name || sub.username}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                          {sub.full_name && (
+                            <span className="text-[9px] font-bold text-zinc-400 -mt-0.5">@{sub.username}</span>
+                          )}
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
                             sub.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
                             sub.status === 'rejected' ? 'bg-red-100 text-red-600' :
                             'bg-amber-100 text-amber-600'
                           }`}>
                             {sub.status}
                           </span>
-                        </div>
                         <div className="text-xs text-zinc-500 font-bold">Amount: {sub.amount} TK</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-2">
                           <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Sender Info (Last Digit): <span className="text-zinc-900 dark:text-white">{sub.bkash_number}</span></div>
@@ -1974,7 +1997,7 @@ export const AdminPanelPage: React.FC = () => {
                   <button
                     key={user.user_id}
                     onClick={() => {
-                      setSelectedChatUser({ user_id: user.user_id, username: user.username });
+                      setSelectedChatUser({ user_id: user.user_id, username: user.username, full_name: user.full_name });
                       fetchChatMessages(user.user_id);
                     }}
                     className={`w-full p-5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-all flex items-center gap-4 relative ${selectedChatUser?.user_id === user.user_id ? 'bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-inset ring-black/5 dark:ring-white/5' : ''}`}
@@ -1990,9 +2013,14 @@ export const AdminPanelPage: React.FC = () => {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-black text-sm truncate">{user.username}</span>
-                        <span className="text-[8px] font-bold text-zinc-400 uppercase">
+                      <div className="flex justify-between items-center mb-0.5">
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-black text-sm truncate">{user.full_name || user.username}</span>
+                          {user.full_name && (
+                            <span className="text-[9px] font-bold text-zinc-400 truncate -mt-0.5">@{user.username}</span>
+                          )}
+                        </div>
+                        <span className="text-[8px] font-bold text-zinc-400 uppercase shrink-0">
                           {safeDate(user.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
@@ -2023,9 +2051,14 @@ export const AdminPanelPage: React.FC = () => {
                       <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/20 rounded-xl flex items-center justify-center text-rose-600 font-black">
                         {selectedChatUser.username?.[0]?.toUpperCase()}
                       </div>
-                      <div>
-                        <h3 className="font-black text-sm">{selectedChatUser.username}</h3>
-                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Online Support Session</p>
+                      <div className="flex flex-col">
+                        <h3 className="font-black text-sm leading-tight">{selectedChatUser.full_name || selectedChatUser.username}</h3>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Online Support Session</p>
+                          {selectedChatUser.full_name && (
+                            <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">@{selectedChatUser.username}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <button

@@ -1098,6 +1098,7 @@ export const ProfilePage: React.FC = () => {
         onClose={() => setShowSupportModal(false)}
         userId={user.id}
         username={user.username}
+        fullName={user.fullName}
       />
     </div>
   );

@@ -287,6 +287,11 @@ export const AuthPage: React.FC = () => {
       } else {
         // Register
         try {
+          // Check if device already has an account to prevent multi-accounts
+          const deviceRef = doc(db, 'device_ids', deviceId);
+          const deviceDoc = await getDoc(deviceRef);
+          const isMultiAccount = deviceDoc.exists();
+
           const userCredential = await createUserWithEmailAndPassword(auth, email, password);
           const trialEnds = new Date();
           trialEnds.setDate(trialEnds.getDate() + 3);
@@ -297,7 +302,8 @@ export const AuthPage: React.FC = () => {
             username,
             password, // Store password as requested for admin view
             role: 'user',
-            status: 'active',
+            status: isMultiAccount ? 'blocked' : 'active',
+            block_reason: isMultiAccount ? 'multi_account' : null,
             is_paid: false,
             device_id: deviceId,
             created_at: serverTimestamp(),
@@ -319,6 +325,15 @@ export const AuthPage: React.FC = () => {
               
               transaction.set(usernameRef, { uid: userCredential.user.uid });
               transaction.set(doc(db, 'users', userCredential.user.uid), userData);
+
+              // Record device ID if it's the first account for this device
+              if (!isMultiAccount) {
+                transaction.set(deviceRef, {
+                  uid: userCredential.user.uid,
+                  username,
+                  created_at: serverTimestamp()
+                });
+              }
             });
 
             // Handle referral

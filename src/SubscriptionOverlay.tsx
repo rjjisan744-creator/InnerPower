@@ -52,6 +52,7 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
       await addDoc(collection(db, "subscriptions"), {
         user_id: user.id,
         username: user.username,
+        full_name: user.fullName || user.username,
         amount: amount,
         bkash_number: bkashNumber,
         transaction_id: transactionId,
@@ -235,6 +236,7 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
         onClose={() => setShowSupportModal(false)}
         userId={user.id}
         username={user.username}
+        fullName={user.fullName}
       />
     </div>
   );
