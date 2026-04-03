@@ -102,16 +102,28 @@ export const ProfilePage: React.FC = () => {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      setEditForm({
-        fullName: parsedUser.fullName || '',
-        email: parsedUser.email || ''
-      });
+    if (!storedUser) {
+      navigate('/auth');
+      return;
+    }
+    const parsedUser = JSON.parse(storedUser);
+    setUser(parsedUser);
+    setEditForm({
+      fullName: parsedUser.fullName || '',
+      email: parsedUser.email || ''
+    });
+
+    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) {
+        console.log("ProfilePage: No firebase user, redirecting to auth");
+        navigate('/auth');
+        return;
+      }
+
+      console.log("ProfilePage: Auth ready, setting up listeners for", firebaseUser.uid);
 
       // Fetch fresh data for stats
-      const unsub = onSnapshot(doc(db, "users", parsedUser.id), (docSnap) => {
+      const unsubUser = onSnapshot(doc(db, "users", firebaseUser.uid), (docSnap) => {
         if (docSnap.exists()) {
           const userData = docSnap.data();
           if (userData.status === 'blocked') {
@@ -147,23 +159,26 @@ export const ProfilePage: React.FC = () => {
           localStorage.removeItem('user');
           navigate('/auth');
         }
+      }, (err) => {
+        console.error("ProfilePage: User listener error:", err);
       });
-      return () => unsub();
-    } else {
-      navigate('/auth');
-    }
-  }, [navigate]);
 
-  // Fetch all notes
-  useEffect(() => {
-    if (user) {
-      const q = query(collection(db, "user_notes"), where("user_id", "==", user.id), orderBy("updated_at", "desc"));
-      const unsub = onSnapshot(q, (snap) => {
+      // Fetch all notes
+      const qNotes = query(collection(db, "user_notes"), where("user_id", "==", firebaseUser.uid), orderBy("updated_at", "desc"));
+      const unsubNotes = onSnapshot(qNotes, (snap) => {
         setNotesList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+      }, (err) => {
+        console.error("ProfilePage: Notes listener error:", err);
       });
-      return () => unsub();
-    }
-  }, [user?.id]);
+
+      return () => {
+        unsubUser();
+        unsubNotes();
+      };
+    });
+
+    return () => unsubscribeAuth();
+  }, [navigate]);
 
   // Debounced Auto-save for selected note
   useEffect(() => {

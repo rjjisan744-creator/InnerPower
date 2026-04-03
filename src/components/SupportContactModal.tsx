@@ -21,7 +21,7 @@ interface SupportContactModalProps {
 }
 
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 
 export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen, onClose, userId, username, fullName }) => {
   const [message, setMessage] = useState('');
@@ -36,26 +36,40 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
   };
 
   useEffect(() => {
-    if (isOpen && userId) {
+    if (!isOpen || !userId) return;
+
+    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) return;
+
       const q = query(
         collection(db, "support_messages"),
         where("user_id", "==", userId),
         orderBy("created_at", "asc")
       );
+      
       const unsub = onSnapshot(q, (snap) => {
         setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         
         // Mark admin messages as read
         const batch = writeBatch(db);
+        let hasChanges = false;
         snap.docs.forEach(d => {
           if (d.data().status === 'unread' && d.data().sender_role === 'admin') {
             batch.update(d.ref, { status: 'read' });
+            hasChanges = true;
           }
         });
-        batch.commit();
+        if (hasChanges) {
+          batch.commit().catch(err => console.error("SupportContactModal: Batch commit error:", err));
+        }
+      }, (err) => {
+        console.error("SupportContactModal: Messages listener error:", err);
       });
+
       return () => unsub();
-    }
+    });
+
+    return () => unsubscribeAuth();
   }, [isOpen, userId]);
 
   useEffect(() => {

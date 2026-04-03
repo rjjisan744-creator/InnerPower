@@ -10,7 +10,7 @@ interface SubscriptionOverlayProps {
 }
 
 import { collection, addDoc, serverTimestamp, doc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, onClose }) => {
   const [bkashNumber, setBkashNumber] = useState('');
@@ -27,13 +27,22 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({ user, 
   const DURATION = "১ বছর";
 
   React.useEffect(() => {
-    const unsub = onSnapshot(collection(db, "settings"), (snap) => {
-      snap.forEach(doc => {
-        if (doc.id === 'bkash_number') setBkashTarget(doc.data().value);
-        if (doc.id === 'subscription_amount') setAmount(Number(doc.data().value));
+    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) return;
+
+      const unsub = onSnapshot(collection(db, "settings"), (snap) => {
+        snap.forEach(doc => {
+          if (doc.id === 'bkash_number') setBkashTarget(doc.data().value);
+          if (doc.id === 'subscription_amount') setAmount(Number(doc.data().value));
+        });
+      }, (err) => {
+        console.error("SubscriptionOverlay: Settings listener error:", err);
       });
+
+      return () => unsub();
     });
-    return () => unsub();
+
+    return () => unsubscribeAuth();
   }, []);
 
   const handleCopy = () => {

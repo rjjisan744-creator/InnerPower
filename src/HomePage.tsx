@@ -72,154 +72,162 @@ export const HomePage: React.FC = () => {
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
     
-    // Verify status with Firestore
-    const unsubUser = onSnapshot(doc(db, 'users', parsedUser.id), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.status === 'blocked') {
-          localStorage.removeItem('user');
-          navigate('/auth', { state: { error: "আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।" } });
-          return;
-        }
-        
-        const now = new Date();
-        let trialEndsAt = data.trial_ends_at;
-        
-        // If trial_ends_at is missing, initialize it (3 days from created_at or now)
-        if (!trialEndsAt) {
-          const createdAt = data.created_at ? safeDate(data.created_at) : now;
-          const newTrialEnds = new Date(createdAt);
-          newTrialEnds.setDate(newTrialEnds.getDate() + 3);
-          trialEndsAt = newTrialEnds.toISOString();
-          
-          // Update Firestore
-          updateDoc(doc(db, 'users', docSnap.id), { trial_ends_at: trialEndsAt }).catch(err => {
-            console.error('Error initializing trial_ends_at:', err);
-          });
-        }
-
-        const trialEnds = safeDate(trialEndsAt);
-        const isTrialExpired = now > trialEnds;
-
-        // Calculate days left
-        const diffTime = trialEnds.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        setTrialDaysLeft(diffDays > 0 ? diffDays : 0);
-
-        const updatedUser = {
-          ...parsedUser,
-          ...data,
-          id: docSnap.id,
-          fullName: data.full_name || parsedUser.fullName,
-          profilePicture: data.profile_picture || parsedUser.profilePicture,
-          referralCode: data.referral_code || parsedUser.referralCode,
-          referralCount: data.referral_count || 0,
-          isPaid: !!data.is_paid,
-          hasPendingSubscription: !!data.has_pending_subscription,
-          isTrialExpired
-        };
-        setUser(updatedUser);
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-      } else {
-        localStorage.removeItem('user');
+    // Real-time listeners
+    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) {
+        console.log("HomePage: No firebase user, redirecting to auth");
         navigate('/auth');
+        return;
       }
-    }, (err) => {
-      console.error('Auth verification failed:', err);
+
+      console.log("HomePage: Auth ready, setting up listeners for", firebaseUser.uid);
+
+      // Verify status with Firestore
+      const unsubUser = onSnapshot(doc(db, 'users', firebaseUser.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.status === 'blocked') {
+            localStorage.removeItem('user');
+            navigate('/auth', { state: { error: "আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।" } });
+            return;
+          }
+          
+          const now = new Date();
+          let trialEndsAt = data.trial_ends_at;
+          
+          // If trial_ends_at is missing, initialize it (3 days from created_at or now)
+          if (!trialEndsAt) {
+            const createdAt = data.created_at ? safeDate(data.created_at) : now;
+            const newTrialEnds = new Date(createdAt);
+            newTrialEnds.setDate(newTrialEnds.getDate() + 3);
+            trialEndsAt = newTrialEnds.toISOString();
+            
+            // Update Firestore
+            updateDoc(doc(db, 'users', docSnap.id), { trial_ends_at: trialEndsAt }).catch(err => {
+              console.error('Error initializing trial_ends_at:', err);
+            });
+          }
+
+          const trialEnds = safeDate(trialEndsAt);
+          const isTrialExpired = now > trialEnds;
+
+          // Calculate days left
+          const diffTime = trialEnds.getTime() - now.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          setTrialDaysLeft(diffDays > 0 ? diffDays : 0);
+
+          const updatedUser = {
+            ...parsedUser,
+            ...data,
+            id: docSnap.id,
+            fullName: data.full_name || parsedUser.fullName,
+            profilePicture: data.profile_picture || parsedUser.profilePicture,
+            referralCode: data.referral_code || parsedUser.referralCode,
+            referralCount: data.referral_count || 0,
+            isPaid: !!data.is_paid,
+            hasPendingSubscription: !!data.has_pending_subscription,
+            isTrialExpired
+          };
+          setUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+        } else {
+          localStorage.removeItem('user');
+          navigate('/auth');
+        }
+      }, (err) => {
+        console.error('Auth verification failed:', err);
+      });
+
+      // Fetch Books
+      const unsubBooks = onSnapshot(query(collection(db, 'books'), where('is_deleted', '==', false), orderBy('sort_index', 'asc')), (snapshot) => {
+        const booksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+        setBooks(booksData);
+      }, (err) => console.error('HomePage: Books listener error:', err));
+
+      // Fetch Categories
+      const unsubCats = onSnapshot(query(collection(db, 'categories'), orderBy('sort_index', 'asc')), (snapshot) => {
+        const catsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+        setCategories(catsData);
+      }, (err) => console.error('HomePage: Categories listener error:', err));
+
+      // Fetch Settings
+      const unsubSettings = onSnapshot(collection(db, 'settings'), (snap) => {
+        snap.forEach(doc => {
+          if (doc.id === 'home_text') setHomeText(doc.data().value || '');
+          if (doc.id === 'home_font_size') setHomeFontSize(parseInt(doc.data().value) || 16);
+          if (doc.id === 'lock_all_categories') setLockAllCategories(!!doc.data().value);
+        });
+      }, (err) => console.error('HomePage: Settings listener error:', err));
+
+      // Fetch Notifications
+      const qNotif = query(
+        collection(db, 'notifications'), 
+        where('user_id', 'in', [null, firebaseUser.uid]),
+        orderBy('created_at', 'desc'),
+        limit(20)
+      );
+      const unsubNotif = onSnapshot(qNotif, (snapshot) => {
+        const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setNotifications(notifs);
+        
+        const lastSeenId = localStorage.getItem('lastSeenNotificationId') || '';
+        const unread = notifs.filter((n: any) => n.id > lastSeenId).length;
+        setUnreadCount(unread);
+      }, (err) => console.error('HomePage: Notifications listener error:', err));
+      
+      // Fetch Unread Support Messages
+      const qSupport = query(
+        collection(db, 'support_messages'),
+        where('user_id', '==', firebaseUser.uid),
+        where('status', '==', 'unread'),
+        where('sender_role', '==', 'admin')
+      );
+      const unsubSupport = onSnapshot(qSupport, (snapshot) => {
+        setUnreadSupportCount(snapshot.size);
+      }, (err) => console.error('HomePage: Support messages listener error:', err));
+
+      // Heartbeat ping to track activity
+      const pingInterval = setInterval(() => {
+        if (firebaseUser.uid) {
+          updateDoc(doc(db, 'users', firebaseUser.uid), {
+            last_active_at: serverTimestamp()
+          }).catch(err => console.error("Ping error:", err));
+        }
+      }, 30000);
+
+      // Request location
+      if (navigator.geolocation && firebaseUser.uid) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            try {
+              await updateDoc(doc(db, 'users', firebaseUser.uid), {
+                latitude,
+                longitude,
+                last_active_at: serverTimestamp()
+              });
+            } catch (err) {
+              console.error("Location update error:", err);
+            }
+          },
+          (err) => console.warn("Location access denied or error:", err),
+          { enableHighAccuracy: false, timeout: 10000 }
+        );
+      }
+
+      return () => {
+        unsubUser();
+        unsubBooks();
+        unsubCats();
+        unsubSettings();
+        unsubNotif();
+        unsubSupport();
+        clearInterval(pingInterval);
+      };
     });
 
-    // Fetch Books
-    const unsubBooks = onSnapshot(collection(db, 'books'), (snapshot) => {
-      const booksData = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as any))
-        .filter(book => !book.is_deleted)
-        .sort((a, b) => (a.sort_index || 0) - (b.sort_index || 0));
-      setBooks(booksData);
-    }, (err) => console.error('HomePage: Books listener error:', err));
-
-    // Fetch Categories
-    const unsubCats = onSnapshot(collection(db, 'categories'), (snapshot) => {
-      const catsData = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as any))
-        .sort((a, b) => (a.sort_index || 0) - (b.sort_index || 0));
-      setCategories(catsData);
-    }, (err) => console.error('HomePage: Categories listener error:', err));
-
-    // Fetch Settings
-    const unsubSettings = onSnapshot(collection(db, 'settings'), (snap) => {
-      snap.forEach(doc => {
-        if (doc.id === 'home_text') setHomeText(doc.data().value || '');
-        if (doc.id === 'home_font_size') setHomeFontSize(parseInt(doc.data().value) || 16);
-        if (doc.id === 'lock_all_categories') setLockAllCategories(!!doc.data().value);
-      });
-    }, (err) => console.error('HomePage: Settings listener error:', err));
-
-    // Fetch Notifications
-    const qNotif = query(
-      collection(db, 'notifications'), 
-      where('user_id', 'in', [null, parsedUser.id]),
-      orderBy('created_at', 'desc'),
-      limit(20)
-    );
-    const unsubNotif = onSnapshot(qNotif, (snapshot) => {
-      const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setNotifications(notifs);
-      
-      const lastSeenId = localStorage.getItem('lastSeenNotificationId') || '';
-      const unread = notifs.filter((n: any) => n.id > lastSeenId).length;
-      setUnreadCount(unread);
-    }, (err) => console.error('HomePage: Notifications listener error:', err));
-    
-    // Fetch Unread Support Messages
-    const qSupport = query(
-      collection(db, 'support_messages'),
-      where('user_id', '==', parsedUser.id),
-      where('status', '==', 'unread'),
-      where('sender_role', '==', 'admin')
-    );
-    const unsubSupport = onSnapshot(qSupport, (snapshot) => {
-      setUnreadSupportCount(snapshot.size);
-    }, (err) => console.error('HomePage: Support messages listener error:', err));
-
-    // Heartbeat ping to track activity
-    const pingInterval = setInterval(() => {
-      if (parsedUser.id) {
-        updateDoc(doc(db, 'users', parsedUser.id), {
-          last_active_at: serverTimestamp()
-        }).catch(err => console.error("Ping error:", err));
-      }
-    }, 30000);
-
-    // Request location
-    if (navigator.geolocation && parsedUser.id) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          try {
-            await updateDoc(doc(db, 'users', parsedUser.id), {
-              latitude,
-              longitude,
-              last_active_at: serverTimestamp()
-            });
-          } catch (error) {
-            console.error('Error updating location:', error);
-          }
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        },
-        { enableHighAccuracy: true }
-      );
-    }
-
     return () => {
-      unsubUser();
-      unsubBooks();
-      unsubCats();
-      unsubSettings();
-      unsubNotif();
-      unsubSupport();
-      clearInterval(pingInterval);
+      unsubscribeAuth();
     };
   }, []);
 

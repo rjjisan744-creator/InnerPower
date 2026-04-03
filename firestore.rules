@@ -52,8 +52,8 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow list: if isAuthenticated();
-      allow read: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow get: if isOwner(userId) || isAdmin();
       allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) && 
                       (request.resource.data.role == 'user' || isAdmin());
       allow update: if isAdmin() || (
@@ -106,7 +106,12 @@ service cloud.firestore {
     }
 
     match /notifications/{notifId} {
-      allow read: if isAuthenticated() && (resource.data.get('user_id', null) == null || resource.data.user_id == request.auth.uid || isAdmin());
+      allow list: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.get('user_id', null) == null || 
+        resource.data.user_id == request.auth.uid || 
+        isAdmin()
+      );
       allow write: if isAdmin();
     }
 
@@ -117,8 +122,15 @@ service cloud.firestore {
     }
 
     match /support_messages/{msgId} {
-      allow read: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated(); // Allow guests or users to send messages
+      allow list: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || 
+        isAdmin() ||
+        // Allow reading if the ID matches the device ID pattern for guests
+        (resource.data.user_id is string && resource.data.user_id.matches("^web-.*"))
+      );
+      allow create: if isAuthenticated() || 
+                       (request.resource.data.user_id is string && request.resource.data.user_id.matches("^web-.*"));
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -141,15 +153,25 @@ service cloud.firestore {
     }
 
     match /reading_history/{historyId} {
+      allow list: if isAdmin();
       allow read: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
       allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
       allow delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
     }
 
     match /wishlist/{wishId} {
-      allow read: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow list: if isAdmin();
+      allow read: if isAuthenticated() && (
+        wishId.startsWith(request.auth.uid) || 
+        (resource != null && resource.data.user_id == request.auth.uid) || 
+        isAdmin()
+      );
       allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow delete: if isAuthenticated() && (
+        wishId.startsWith(request.auth.uid) || 
+        (resource != null && resource.data.user_id == request.auth.uid) || 
+        isAdmin()
+      );
     }
   }
 }

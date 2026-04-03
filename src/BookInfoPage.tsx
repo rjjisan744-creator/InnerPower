@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useApp } from './AppContext';
 
 import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 export const BookInfoPage: React.FC = () => {
   const { id } = useParams();
@@ -19,25 +19,35 @@ export const BookInfoPage: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     
-    const unsub = onSnapshot(doc(db, "books", id), (docSnap) => {
-      if (docSnap.exists()) {
-        setBook({ id: docSnap.id, ...docSnap.data() } as unknown as Book);
-      }
-    });
+    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) return;
 
-    if (user && id) {
-      const wishlistRef = doc(db, "wishlist", `${user.id}_${id}`);
-      const unsubWishlist = onSnapshot(wishlistRef, (docSnap) => {
-        setInWishlist(docSnap.exists());
+      const unsub = onSnapshot(doc(db, "books", id), (docSnap) => {
+        if (docSnap.exists()) {
+          setBook({ id: docSnap.id, ...docSnap.data() } as unknown as Book);
+        }
+      }, (err) => {
+        console.error("BookInfoPage: Book listener error:", err);
       });
+
+      let unsubWishlist = () => {};
+      if (id) {
+        const wishlistRef = doc(db, "wishlist", `${firebaseUser.uid}_${id}`);
+        unsubWishlist = onSnapshot(wishlistRef, (docSnap) => {
+          setInWishlist(docSnap.exists());
+        }, (err) => {
+          console.error("BookInfoPage: Wishlist listener error:", err);
+        });
+      }
+
       return () => {
         unsub();
         unsubWishlist();
       };
-    }
+    });
 
-    return () => unsub();
-  }, [id, user?.id]);
+    return () => unsubscribeAuth();
+  }, [id]);
 
   const [toast, setToast] = useState<{ msg: string, type: 'success' | 'error' } | null>(null);
 

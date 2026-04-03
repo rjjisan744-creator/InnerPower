@@ -9,7 +9,8 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
   updateProfile,
-  fetchSignInMethodsForEmail
+  fetchSignInMethodsForEmail,
+  signInAnonymously
 } from 'firebase/auth';
 import { 
   doc, 
@@ -83,6 +84,13 @@ export const AuthPage: React.FC = () => {
       setError(location.state.error);
       setShowErrorDialog(true);
       setDialogType('blocked');
+    }
+
+    // Sign in anonymously for support chat if not logged in
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch(err => {
+        console.warn("Anonymous sign-in failed (might be expected if already logged in or network issue):", err);
+      });
     }
   }, [location.search, location.state]);
 
@@ -766,7 +774,7 @@ export const AuthPage: React.FC = () => {
               <div className="bg-red-500 text-white text-xs py-2 px-4 rounded-lg text-center font-bold animate-pulse">
                 {error}
               </div>
-              {typeof error === 'string' && error.includes("পাসওয়ার্ডটি ভুল") && (
+              {typeof error === 'string' && (error.includes("পাসওয়ার্ডটি ভুল") || error.includes("ভুলে গেছেন")) && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -813,13 +821,26 @@ export const AuthPage: React.FC = () => {
           </button>
         </form>
 
-        <div className="mt-6 text-center space-y-4">
-          <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-emerald-600 hover:text-emerald-700 text-sm font-bold"
-          >
-            {isLogin ? "Don't have an account? Register" : "Already have an account? Login"}
-          </button>
+          <div className="flex flex-col items-center gap-4">
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-emerald-600 hover:text-emerald-700 text-sm font-bold"
+            >
+              {isLogin ? "Don't have an account? Register" : "Already have an account? Login"}
+            </button>
+            
+            {isLogin && (
+              <button
+                onClick={() => {
+                  setError("পাসওয়ার্ডটি ভুল বা ভুলে গেছেন? নিচে দেওয়া সাপোর্ট বাটনে ক্লিক করে আমাদের সাথে যোগাযোগ করুন।");
+                  // Trigger the support UI by setting the error message that contains the specific phrase
+                }}
+                className="text-zinc-400 hover:text-zinc-500 text-[11px] font-bold uppercase tracking-wider"
+              >
+                Forgot Password?
+              </button>
+            )}
+          </div>
           
           <div className="flex flex-col items-center gap-2 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
             <div className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1">সাপোর্ট ও যোগাযোগ</div>
@@ -864,8 +885,6 @@ export const AuthPage: React.FC = () => {
               DEVELOPED BY RJ JISAN | FORUM JESSORE JHIKARGACHA
             </button>
           </div>
-        </div>
-      </div>
 
       {/* Admin Password Dialog */}
       <AnimatePresence>
@@ -917,9 +936,10 @@ export const AuthPage: React.FC = () => {
       <SupportContactModal
         isOpen={showSupportModal}
         onClose={() => setShowSupportModal(false)}
-        userId={getDeviceId() as any}
+        userId={auth.currentUser?.uid || getDeviceId() as any}
         username={username || 'Guest'}
       />
-    </div>
-  );
-};
+        </div>
+      </div>
+    );
+  };

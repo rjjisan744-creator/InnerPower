@@ -87,65 +87,82 @@ export const ReaderPage: React.FC = () => {
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
     
-    // Verify status with Firestore
-    const unsubUser = onSnapshot(doc(db, 'users', parsedUser.id), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.status === 'blocked') {
-          localStorage.removeItem('user');
-          navigate('/auth', { state: { error: "আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।" } });
-          return;
-        }
-        
-        const now = new Date();
-        const trialEnds = data.trial_ends_at ? safeDate(data.trial_ends_at) : new Date(0);
-        const isTrialExpired = now > trialEnds;
-
-        const updatedUser = {
-          ...parsedUser,
-          ...data,
-          id: docSnap.id,
-          isTrialExpired
-        };
-        setUser(updatedUser);
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-
-        const isExpired = isTrialExpired && !data.is_paid;
-
-        if (data.status === 'blocked' || isExpired) {
-          navigate('/');
-        }
-      } else {
-        localStorage.removeItem('user');
+    // Real-time listeners
+    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) {
+        console.log("ReaderPage: No firebase user, redirecting to auth");
         navigate('/auth');
+        return;
       }
-    });
 
-    if (id) {
-      const unsubBook = onSnapshot(doc(db, 'books', id), (docSnap) => {
+      console.log("ReaderPage: Auth ready, setting up listeners for", firebaseUser.uid);
+
+      // Verify status with Firestore
+      const unsubUser = onSnapshot(doc(db, 'users', firebaseUser.uid), (docSnap) => {
         if (docSnap.exists()) {
-          setBook({ id: docSnap.id, ...docSnap.data() } as any);
+          const data = docSnap.data();
+          if (data.status === 'blocked') {
+            localStorage.removeItem('user');
+            navigate('/auth', { state: { error: "আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। দয়া করে অ্যাডমিনের সাথে যোগাযোগ করুন।" } });
+            return;
+          }
+          
+          const now = new Date();
+          const trialEnds = data.trial_ends_at ? safeDate(data.trial_ends_at) : new Date(0);
+          const isTrialExpired = now > trialEnds;
+
+          const updatedUser = {
+            ...parsedUser,
+            ...data,
+            id: docSnap.id,
+            isTrialExpired
+          };
+          setUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+
+          const isExpired = isTrialExpired && !data.is_paid;
+
+          if (data.status === 'blocked' || isExpired) {
+            navigate('/');
+          }
+        } else {
+          localStorage.removeItem('user');
+          navigate('/auth');
         }
+      }, (err) => {
+        console.error("ReaderPage: User listener error:", err);
       });
 
-      // Add to reading history
-      addDoc(collection(db, 'reading_history'), {
-        user_id: parsedUser.id,
-        book_id: id,
-        read_at: serverTimestamp()
-      }).catch(console.error);
+      let unsubBook = () => {};
+      if (id) {
+        unsubBook = onSnapshot(doc(db, 'books', id), (docSnap) => {
+          if (docSnap.exists()) {
+            setBook({ id: docSnap.id, ...docSnap.data() } as any);
+          }
+        }, (err) => {
+          console.error("ReaderPage: Book listener error:", err);
+        });
+
+        // Add to reading history
+        addDoc(collection(db, 'reading_history'), {
+          user_id: firebaseUser.uid,
+          book_id: id,
+          read_at: serverTimestamp()
+        }).catch(err => console.error("ReaderPage: History error:", err));
+      }
 
       return () => {
         unsubUser();
         unsubBook();
       };
-    }
+    });
 
     // Secure Screen: Disable right click and selection
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
     document.addEventListener('contextmenu', handleContextMenu);
+    
     return () => {
-      unsubUser();
+      unsubscribeAuth();
       document.removeEventListener('contextmenu', handleContextMenu);
     };
   }, []);

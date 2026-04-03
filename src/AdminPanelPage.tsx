@@ -127,220 +127,232 @@ export const AdminPanelPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    console.log("AdminPanel: Initializing...");
-    const userStr = localStorage.getItem('user');
-    if (!userStr) {
-      console.warn("AdminPanel: No user in localStorage, redirecting...");
-      navigate('/');
-      return;
-    }
-
-    let user;
-    try {
-      user = JSON.parse(userStr);
-    } catch (e) {
-      console.error("AdminPanel: Failed to parse user", e);
-      navigate('/');
-      return;
-    }
-
-    const userEmail = auth.currentUser?.email;
-    const isEmailVerified = auth.currentUser?.emailVerified;
-    const isAdminEmail = (userEmail === 'rjjisan744@gmail.com') || 
-                         (['rjjisan744@innerpower.app', 'admin@innerpower.app'].includes(userEmail || '') && isEmailVerified);
-
-    if (user.role !== 'admin' || !isAdminEmail) {
-      console.warn("AdminPanel: Unauthorized access attempt", user.role, userEmail, "Verified:", isEmailVerified);
-      setLoadError("আপনি অ্যাডমিন নন! এই পেজটি শুধুমাত্র অনুমোদিত এবং ভেরিফাইড অ্যাডমিনদের জন্য।");
-      setIsLoading(false);
-      setTimeout(() => navigate('/'), 3000);
-      return;
-    }
-    
-    console.log("AdminPanel: User is admin, starting listeners...");
-    
-    // Safety timeout
-    const timeoutId = setTimeout(() => {
-      setIsLoading((prev) => {
-        if (prev) {
-          console.warn("AdminPanel: Loading timeout reached, forcing finish");
-          return false;
-        }
-        return prev;
-      });
-    }, 5000);
-
-    // Real-time listeners
-    console.log("AdminPanel: Setting up users listener...");
-    const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc"), limit(50)), (snap) => {
-      console.log("AdminPanel: Users snapshot received, size:", snap.size);
-      const data = snap.docs.map(doc => {
-        const d = doc.data();
-        return {
-          id: doc.id,
-          ...d,
-          fullName: d.full_name,
-          email: d.email,
-          profilePicture: d.profile_picture,
-          isPaid: d.is_paid || false,
-          hasPendingSubscription: d.has_pending_subscription || false,
-          trialEndsAt: d.trial_ends_at || '',
-          referralCode: d.referral_code,
-          referredBy: d.referred_by,
-          referralCount: d.referral_count,
-        } as unknown as User;
-      });
-      setUsers(data.filter(u => u.role !== 'admin'));
-      setIsLoading(false);
-      clearTimeout(timeoutId);
-    }, (err) => {
-      console.error('AdminPanel: Users listener error:', err);
-      setLoadError(`Users Listener Error: ${err.message}`);
-      setIsLoading(false);
-      clearTimeout(timeoutId);
-    });
-
-    console.log("AdminPanel: Setting up books listener...");
-    const unsubBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", false), orderBy("sort_index", "asc")), (snap) => {
-      console.log("AdminPanel: Books snapshot received, size:", snap.size);
-      setBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: Books listener error:', err);
-      setLoadError(`Books Error: ${err.message}`);
-      setIsLoading(false);
-    });
-
-    console.log("AdminPanel: Setting up reading history listener...");
-    const unsubReadingHistory = onSnapshot(collection(db, "reading_history"), (snap) => {
-      console.log("AdminPanel: Reading history snapshot received, size:", snap.size);
-      const counts: Record<string, Set<string>> = {};
-      const allUniqueReaders = new Set<string>();
-      snap.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.book_id && data.user_id) {
-          if (!counts[data.book_id]) counts[data.book_id] = new Set();
-          counts[data.book_id].add(data.user_id);
-          allUniqueReaders.add(data.user_id);
-        }
-      });
-      const finalCounts: Record<string, number> = {};
-      const finalReadersMap: Record<string, string[]> = {};
-      for (const bookId in counts) {
-        finalCounts[bookId] = counts[bookId].size;
-        finalReadersMap[bookId] = Array.from(counts[bookId]);
+    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) {
+        console.log("AdminPanel: No firebase user, redirecting to auth");
+        navigate('/auth');
+        return;
       }
-      setBookReadCounts(finalCounts);
-      setBookReadersMap(finalReadersMap);
-      setTotalUniqueReaders(allUniqueReaders.size);
-    }, (err) => {
-      console.error('AdminPanel: Reading history listener error:', err);
-    });
 
-    console.log("AdminPanel: Setting up deleted books listener...");
-    const unsubDeletedBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", true)), (snap) => {
-      console.log("AdminPanel: DeletedBooks snapshot received, size:", snap.size);
-      setDeletedBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: DeletedBooks listener error:', err);
-      setLoadError(`Deleted Books Error: ${err.message}`);
-      setIsLoading(false);
-    });
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        console.warn("AdminPanel: No user in localStorage, redirecting...");
+        navigate('/');
+        return;
+      }
 
-    const unsubCategories = onSnapshot(query(collection(db, "categories"), orderBy("sort_index", "asc")), (snap) => {
-      setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Category)));
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: Categories listener error:', err);
-      setLoadError(`Categories Error: ${err.message}`);
-      setIsLoading(false);
-    });
+      let user: User;
+      try {
+        user = JSON.parse(userStr);
+      } catch (e) {
+        console.error("AdminPanel: Failed to parse user", e);
+        navigate('/');
+        return;
+      }
 
-    const unsubNotifications = onSnapshot(query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(100)), (snap) => {
-      setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: Notifications listener error:', err);
-      setLoadError(`Notifications Error: ${err.message}`);
-      setIsLoading(false);
-    });
+      const userEmail = firebaseUser.email;
+      const isEmailVerified = firebaseUser.emailVerified;
+      const isAdminEmail = (userEmail === 'rjjisan744@gmail.com') || 
+                           (['rjjisan744@innerpower.app', 'admin@innerpower.app'].includes(userEmail || '') && isEmailVerified);
 
-    const unsubSubscriptions = onSnapshot(query(collection(db, "subscriptions"), orderBy("created_at", "desc")), (snap) => {
-      setSubscriptions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: Subscriptions listener error:', err);
-      setLoadError(`Subscriptions Error: ${err.message}`);
-      setIsLoading(false);
-    });
+      if (user.role !== 'admin' || !isAdminEmail) {
+        console.warn("AdminPanel: Unauthorized access attempt", user.role, userEmail, "Verified:", isEmailVerified);
+        setLoadError("আপনি অ্যাডমিন নন! এই পেজটি শুধুমাত্র অনুমোদিত এবং ভেরিফাইড অ্যাডমিনদের জন্য।");
+        setIsLoading(false);
+        setTimeout(() => navigate('/'), 3000);
+        return;
+      }
+      
+      console.log("AdminPanel: User is admin, starting listeners...");
+      
+      // Safety timeout
+      const timeoutId = setTimeout(() => {
+        setIsLoading((prev) => {
+          if (prev) {
+            console.warn("AdminPanel: Loading timeout reached, forcing finish");
+            return false;
+          }
+          return prev;
+        });
+      }, 5000);
 
-    const unsubSupport = onSnapshot(query(collection(db, "support_messages"), orderBy("created_at", "desc")), (snap) => {
-      const messages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      // Group by user for the list view
-      const userGroups: any = {};
-      messages.forEach((m: any) => {
-        if (!userGroups[m.user_id]) {
-          userGroups[m.user_id] = {
-            user_id: m.user_id,
-            username: m.username,
-            full_name: m.full_name,
-            last_message: m.message,
-            last_message_at: m.created_at,
-            unread_count: messages.filter((msg: any) => msg.user_id === m.user_id && msg.status === 'unread' && msg.sender_role === 'user').length
-          };
-        } else {
-          // If we already have the group but it's missing name/username (e.g. from an admin reply),
-          // and this message has it, update it.
-          if (!userGroups[m.user_id].username && m.username) userGroups[m.user_id].username = m.username;
-          if (!userGroups[m.user_id].full_name && m.full_name) userGroups[m.user_id].full_name = m.full_name;
+      // Real-time listeners
+      console.log("AdminPanel: Setting up users listener...");
+      const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc"), limit(50)), (snap) => {
+        console.log("AdminPanel: Users snapshot received, size:", snap.size);
+        const data = snap.docs.map(doc => {
+          const d = doc.data();
+          return {
+            id: doc.id,
+            ...d,
+            fullName: d.full_name,
+            email: d.email,
+            profilePicture: d.profile_picture,
+            isPaid: d.is_paid || false,
+            hasPendingSubscription: d.has_pending_subscription || false,
+            trialEndsAt: d.trial_ends_at || '',
+            referralCode: d.referral_code,
+            referredBy: d.referred_by,
+            referralCount: d.referral_count,
+          } as unknown as User;
+        });
+        setUsers(data.filter(u => u.role !== 'admin'));
+        setIsLoading(false);
+        clearTimeout(timeoutId);
+      }, (err) => {
+        console.error('AdminPanel: Users listener error:', err);
+        setLoadError(`Users Listener Error: ${err.message}`);
+        setIsLoading(false);
+        clearTimeout(timeoutId);
+      });
+
+      console.log("AdminPanel: Setting up books listener...");
+      const unsubBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", false), orderBy("sort_index", "asc")), (snap) => {
+        console.log("AdminPanel: Books snapshot received, size:", snap.size);
+        setBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: Books listener error:', err);
+        setLoadError(`Books Error: ${err.message}`);
+        setIsLoading(false);
+      });
+
+      console.log("AdminPanel: Setting up reading history listener...");
+      const unsubReadingHistory = onSnapshot(collection(db, "reading_history"), (snap) => {
+        console.log("AdminPanel: Reading history snapshot received, size:", snap.size);
+        const counts: Record<string, Set<string>> = {};
+        const allUniqueReaders = new Set<string>();
+        snap.docs.forEach(doc => {
+          const data = doc.data();
+          if (data.book_id && data.user_id) {
+            if (!counts[data.book_id]) counts[data.book_id] = new Set();
+            counts[data.book_id].add(data.user_id);
+            allUniqueReaders.add(data.user_id);
+          }
+        });
+        const finalCounts: Record<string, number> = {};
+        const finalReadersMap: Record<string, string[]> = {};
+        for (const bookId in counts) {
+          finalCounts[bookId] = counts[bookId].size;
+          finalReadersMap[bookId] = Array.from(counts[bookId]);
         }
+        setBookReadCounts(finalCounts);
+        setBookReadersMap(finalReadersMap);
+        setTotalUniqueReaders(allUniqueReaders.size);
+      }, (err) => {
+        console.error('AdminPanel: Reading history listener error:', err);
       });
-      setSupportMessages(Object.values(userGroups));
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: Support listener error:', err);
-      setLoadError(`Support Error: ${err.message}`);
-      setIsLoading(false);
-    });
 
-    const unsubSettings = onSnapshot(collection(db, "settings"), (snap) => {
-      snap.forEach(doc => {
-        if (doc.id === 'home_text') setHomeText(doc.data().value);
-        if (doc.id === 'home_font_size') setHomeFontSize(Number(doc.data().value));
-        if (doc.id === 'auth_text') setAuthText(doc.data().value);
-        if (doc.id === 'sms_support_number') setSmsSupportNumber(doc.data().value);
-        if (doc.id === 'bkash_number') setBkashNumber(doc.data().value);
-        if (doc.id === 'subscription_amount') setSubscriptionAmount(Number(doc.data().value));
-        if (doc.id === 'lock_all_categories') setLockAllCategories(doc.data().value);
+      console.log("AdminPanel: Setting up deleted books listener...");
+      const unsubDeletedBooks = onSnapshot(query(collection(db, "books"), where("is_deleted", "==", true)), (snap) => {
+        console.log("AdminPanel: DeletedBooks snapshot received, size:", snap.size);
+        setDeletedBooks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Book)));
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: DeletedBooks listener error:', err);
+        setLoadError(`Deleted Books Error: ${err.message}`);
+        setIsLoading(false);
       });
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: Settings listener error:', err);
-      setLoadError(`Settings Error: ${err.message}`);
-      setIsLoading(false);
-    });
 
-    const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc")), (snap) => {
-      setReferrals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setIsLoading(false);
-    }, (err) => {
-      console.error('AdminPanel: Referrals listener error:', err);
-      setLoadError(`Referrals Error: ${err.message}`);
-      setIsLoading(false);
+      const unsubCategories = onSnapshot(query(collection(db, "categories"), orderBy("sort_index", "asc")), (snap) => {
+        setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Category)));
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: Categories listener error:', err);
+        setLoadError(`Categories Error: ${err.message}`);
+        setIsLoading(false);
+      });
+
+      const unsubNotifications = onSnapshot(query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(100)), (snap) => {
+        setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: Notifications listener error:', err);
+        setLoadError(`Notifications Error: ${err.message}`);
+        setIsLoading(false);
+      });
+
+      const unsubSubscriptions = onSnapshot(query(collection(db, "subscriptions"), orderBy("created_at", "desc")), (snap) => {
+        setSubscriptions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: Subscriptions listener error:', err);
+        setLoadError(`Subscriptions Error: ${err.message}`);
+        setIsLoading(false);
+      });
+
+      const unsubSupport = onSnapshot(query(collection(db, "support_messages"), orderBy("created_at", "desc")), (snap) => {
+        const messages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+        // Group by user for the list view
+        const userGroups: any = {};
+        messages.forEach((m: any) => {
+          if (!userGroups[m.user_id]) {
+            userGroups[m.user_id] = {
+              user_id: m.user_id,
+              username: m.username,
+              full_name: m.full_name,
+              last_message: m.message,
+              last_message_at: m.created_at,
+              unread_count: messages.filter((msg: any) => msg.user_id === m.user_id && msg.status === 'unread' && msg.sender_role === 'user').length
+            };
+          } else {
+            // If we already have the group but it's missing name/username (e.g. from an admin reply),
+            // and this message has it, update it.
+            if (!userGroups[m.user_id].username && m.username) userGroups[m.user_id].username = m.username;
+            if (!userGroups[m.user_id].full_name && m.full_name) userGroups[m.user_id].full_name = m.full_name;
+          }
+        });
+        setSupportMessages(Object.values(userGroups));
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: Support listener error:', err);
+        setLoadError(`Support Error: ${err.message}`);
+        setIsLoading(false);
+      });
+
+      const unsubSettings = onSnapshot(collection(db, "settings"), (snap) => {
+        snap.forEach(doc => {
+          if (doc.id === 'home_text') setHomeText(doc.data().value);
+          if (doc.id === 'home_font_size') setHomeFontSize(Number(doc.data().value));
+          if (doc.id === 'auth_text') setAuthText(doc.data().value);
+          if (doc.id === 'sms_support_number') setSmsSupportNumber(doc.data().value);
+          if (doc.id === 'bkash_number') setBkashNumber(doc.data().value);
+          if (doc.id === 'subscription_amount') setSubscriptionAmount(Number(doc.data().value));
+          if (doc.id === 'lock_all_categories') setLockAllCategories(doc.data().value);
+        });
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: Settings listener error:', err);
+        setLoadError(`Settings Error: ${err.message}`);
+        setIsLoading(false);
+      });
+
+      const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc")), (snap) => {
+        setReferrals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setIsLoading(false);
+      }, (err) => {
+        console.error('AdminPanel: Referrals listener error:', err);
+        setLoadError(`Referrals Error: ${err.message}`);
+        setIsLoading(false);
+      });
+
+      return () => {
+        unsubUsers();
+        unsubBooks();
+        unsubReadingHistory();
+        unsubDeletedBooks();
+        unsubCategories();
+        unsubNotifications();
+        unsubSubscriptions();
+        unsubSupport();
+        unsubSettings();
+        unsubReferrals();
+        clearTimeout(timeoutId);
+      };
     });
 
     return () => {
-      unsubUsers();
-      unsubBooks();
-      unsubReadingHistory();
-      unsubDeletedBooks();
-      unsubCategories();
-      unsubNotifications();
-      unsubSubscriptions();
-      unsubSupport();
-      unsubSettings();
-      unsubReferrals();
+      unsubscribeAuth();
     };
   }, [navigate]);
 
