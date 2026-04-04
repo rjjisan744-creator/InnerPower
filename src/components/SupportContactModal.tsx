@@ -204,7 +204,7 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
                     }
                   }}
                   placeholder="মেসেজ লিখুন..."
-                  className="w-full pl-5 pr-14 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-sm outline-none focus:ring-2 focus:ring-rose-500 transition-all font-medium resize-none h-14"
+                  className="w-full pl-5 pr-14 py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 text-base outline-none focus:ring-2 focus:ring-rose-500 transition-all font-medium resize-none h-14"
                 />
                 <button
                   type="submit"

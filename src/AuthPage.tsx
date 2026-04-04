@@ -435,19 +435,72 @@ export const AuthPage: React.FC = () => {
           };
 
           try {
-            // Use a transaction to ensure username is unique and recorded
+            // Use a single transaction to ensure everything is atomic
             await runTransaction(db, async (transaction) => {
+              // 1. Check username uniqueness
               const usernameRef = doc(db, 'usernames', sanitizedUsername);
               const usernameDoc = await transaction.get(usernameRef);
               
               if (usernameDoc.exists()) {
                 throw new Error("Username already taken");
               }
+
+              // 2. Check referral code if provided
+              let referrerId = null;
+              let referrerUsername = 'Unknown';
+              if (referralCode) {
+                const q = query(collection(db, "users"), where("referral_code", "==", referralCode), limit(1));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                  const referrerDoc = querySnapshot.docs[0];
+                  const referrerData = referrerDoc.data();
+                  if (referrerData.referral_count < 10) {
+                    referrerId = referrerDoc.id;
+                    referrerUsername = referrerData.username || 'Unknown';
+                    
+                    // Increment referrer's count
+                    transaction.update(doc(db, 'users', referrerId), {
+                      referral_count: increment(1)
+                    });
+                  }
+                }
+              }
               
+              // 3. Prepare user data
+              const userData = {
+                username: sanitizedUsername,
+                password,
+                role: 'user',
+                status: isMultiAccount ? 'blocked' : 'active',
+                block_reason: isMultiAccount ? 'multi_account' : null,
+                is_paid: false,
+                device_id: deviceId,
+                created_at: serverTimestamp(),
+                trial_ends_at: referrerId 
+                  ? new Date(new Date().setDate(new Date().getDate() + 6)).toISOString()
+                  : trialEnds.toISOString(),
+                referral_code: myReferralCode,
+                referral_count: 0,
+                referred_by: referrerId
+              };
+
+              // 4. Perform all writes
               transaction.set(usernameRef, { uid: userCredential.user.uid });
               transaction.set(doc(db, 'users', userCredential.user.uid), userData);
 
-              // Record device ID if it's the first account for this device
+              if (referrerId) {
+                const referralRef = doc(collection(db, 'referrals'));
+                transaction.set(referralRef, {
+                  referrer_id: referrerId,
+                  referrer_username: referrerUsername,
+                  referee_id: userCredential.user.uid,
+                  referee_username: sanitizedUsername,
+                  bonus_granted: false,
+                  created_at: serverTimestamp()
+                });
+              }
+
               if (!isMultiAccount) {
                 transaction.set(deviceRef, {
                   uid: userCredential.user.uid,
@@ -457,47 +510,7 @@ export const AuthPage: React.FC = () => {
               }
             });
 
-            // Handle referral
-            if (referralCode) {
-              console.log("AuthPage: Processing referral code:", referralCode);
-              const q = query(collection(db, "users"), where("referral_code", "==", referralCode), limit(1));
-              const querySnapshot = await getDocs(q);
-              
-              if (!querySnapshot.empty) {
-                const referrerDoc = querySnapshot.docs[0];
-                const referrerData = referrerDoc.data();
-                console.log("AuthPage: Referrer found:", referrerData.username);
-                
-                if (referrerData.referral_count < 10) {
-                  await runTransaction(db, async (transaction) => {
-                    transaction.update(doc(db, 'users', referrerDoc.id), {
-                      referral_count: increment(1)
-                    });
-                    
-                    const referralRef = doc(collection(db, 'referrals'));
-                    transaction.set(referralRef, {
-                      referrer_id: referrerDoc.id,
-                      referrer_username: referrerData.username || 'Unknown',
-                      referee_id: userCredential.user.uid,
-                      referee_username: sanitizedUsername,
-                      bonus_granted: false,
-                      created_at: serverTimestamp()
-                    });
-
-                    transaction.update(doc(db, 'users', userCredential.user.uid), {
-                      referred_by: referrerDoc.id,
-                      trial_ends_at: new Date(new Date().setDate(new Date().getDate() + 6)).toISOString()
-                    });
-                  });
-                  console.log("AuthPage: Referral transaction completed successfully");
-                } else {
-                  console.warn("AuthPage: Referrer has reached max referral limit (10)");
-                }
-              } else {
-                console.warn("AuthPage: Invalid referral code - no user found");
-              }
-            }
-
+            console.log("AuthPage: Registration and referral completed successfully");
             localStorage.setItem('has_registered', 'true');
             setIsLogin(true);
             setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
