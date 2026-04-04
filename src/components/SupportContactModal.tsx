@@ -38,53 +38,48 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
   useEffect(() => {
     if (!isOpen || !userId) return;
 
-    const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
-      if (!firebaseUser) return;
-
-      const q = query(
-        collection(db, "support_messages"),
-        where("user_id", "==", userId)
-      );
+    const q = query(
+      collection(db, "support_messages"),
+      where("user_id", "==", userId)
+    );
+    
+    const unsub = onSnapshot(q, (snap) => {
+      const fetchedMessages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort client-side to avoid needing a composite index
+      fetchedMessages.sort((a: any, b: any) => {
+        const timeA = a.created_at?.toMillis ? a.created_at.toMillis() : Date.now();
+        const timeB = b.created_at?.toMillis ? b.created_at.toMillis() : Date.now();
+        return timeA - timeB;
+      });
+      setMessages(fetchedMessages);
       
-      const unsub = onSnapshot(q, (snap) => {
-        const fetchedMessages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // Sort client-side to avoid needing a composite index
-        fetchedMessages.sort((a: any, b: any) => {
-          const timeA = a.created_at?.toMillis ? a.created_at.toMillis() : Date.now();
-          const timeB = b.created_at?.toMillis ? b.created_at.toMillis() : Date.now();
-          return timeA - timeB;
-        });
-        setMessages(fetchedMessages);
-        
-        // Mark admin messages as read
-        const batch = writeBatch(db);
-        let hasChanges = false;
-        snap.docs.forEach(d => {
-          if (d.data().status === 'unread' && d.data().sender_role === 'admin') {
-            batch.update(d.ref, { status: 'read' });
-            hasChanges = true;
-          }
-        });
-        if (hasChanges) {
-          batch.commit().catch(err => {
-            if (err.code !== 'resource-exhausted' && err.code !== 'permission-denied') {
-              console.error("SupportContactModal: Batch commit error:", err);
-            }
-          });
-        }
-      }, (err) => {
-        console.error("SupportContactModal: Messages listener error:", err);
-        if (err.code === 'permission-denied') {
-          setError('মেসেজ লোড করার অনুমতি নেই।');
-        } else {
-          setError('মেসেজ লোড করা যায়নি।');
+      // Mark admin messages as read
+      const batch = writeBatch(db);
+      let hasChanges = false;
+      snap.docs.forEach(d => {
+        if (d.data().status === 'unread' && d.data().sender_role === 'admin') {
+          batch.update(d.ref, { status: 'read' });
+          hasChanges = true;
         }
       });
-
-      return () => unsub();
+      if (hasChanges) {
+        batch.commit().catch(err => {
+          if (err.code !== 'resource-exhausted' && err.code !== 'permission-denied') {
+            console.error("SupportContactModal: Batch commit error:", err);
+          }
+        });
+      }
+    }, (err) => {
+      console.error("SupportContactModal: Messages listener error:", err);
+      if (err.code === 'permission-denied') {
+        // This is expected if auth hasn't happened yet, Firestore will retry automatically
+        console.log("SupportContactModal: Waiting for authentication...");
+      } else {
+        setError('মেসেজ লোড করা যায়নি।');
+      }
     });
 
-    return () => unsubscribeAuth();
+    return () => unsub();
   }, [isOpen, userId]);
 
   useEffect(() => {

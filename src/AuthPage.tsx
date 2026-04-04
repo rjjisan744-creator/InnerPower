@@ -993,7 +993,7 @@ export const AuthPage: React.FC = () => {
       <SupportContactModal
         isOpen={showSupportModal}
         onClose={() => setShowSupportModal(false)}
-        userId={auth.currentUser?.uid || getDeviceId() as any}
+        userId={getDeviceId() as any}
         username={username || 'Guest'}
       />
         </div>
