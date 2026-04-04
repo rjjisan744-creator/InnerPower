@@ -449,20 +449,28 @@ export const AuthPage: React.FC = () => {
               let referrerId = null;
               let referrerUsername = 'Unknown';
               if (referralCode) {
-                const q = query(collection(db, "users"), where("referral_code", "==", referralCode), limit(1));
-                const querySnapshot = await getDocs(q);
+                const referralCodeRef = doc(db, 'referral_codes', referralCode.toUpperCase());
+                const referralCodeDoc = await getDoc(referralCodeRef);
                 
-                if (!querySnapshot.empty) {
-                  const referrerDoc = querySnapshot.docs[0];
-                  const referrerData = referrerDoc.data();
-                  if (referrerData.referral_count < 10) {
-                    referrerId = referrerDoc.id;
-                    referrerUsername = referrerData.username || 'Unknown';
-                    
-                    // Increment referrer's count
-                    transaction.update(doc(db, 'users', referrerId), {
-                      referral_count: increment(1)
-                    });
+                if (referralCodeDoc.exists()) {
+                  referrerId = referralCodeDoc.data().uid;
+                  const referrerRef = doc(db, 'users', referrerId);
+                  const referrerDoc = await transaction.get(referrerRef);
+                  
+                  if (referrerDoc.exists()) {
+                    const referrerData = referrerDoc.data();
+                    if (referrerData.referral_count < 10) {
+                      referrerUsername = referrerData.username || 'Unknown';
+                      
+                      // Increment referrer's count
+                      transaction.update(referrerRef, {
+                        referral_count: increment(1)
+                      });
+                    } else {
+                      referrerId = null; // Max referrals reached
+                    }
+                  } else {
+                    referrerId = null; // Referrer doc missing
                   }
                 }
               }
@@ -488,6 +496,7 @@ export const AuthPage: React.FC = () => {
               // 4. Perform all writes
               transaction.set(usernameRef, { uid: userCredential.user.uid });
               transaction.set(doc(db, 'users', userCredential.user.uid), userData);
+              transaction.set(doc(db, 'referral_codes', myReferralCode), { uid: userCredential.user.uid });
 
               if (referrerId) {
                 const referralRef = doc(collection(db, 'referrals'));
@@ -764,7 +773,7 @@ export const AuthPage: React.FC = () => {
                   : !isLogin && isUsernameAvailable === true 
                   ? 'border-emerald-500 ring-1 ring-emerald-500' 
                   : 'border-zinc-200 dark:border-zinc-800'
-              } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all`}
+              } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
             />
             {!isLogin && username.length >= 3 && (
               <div className="mt-1">
@@ -813,7 +822,7 @@ export const AuthPage: React.FC = () => {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+              className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
             />
           </div>
 
@@ -827,7 +836,7 @@ export const AuthPage: React.FC = () => {
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value)}
                 placeholder="রেফার কোড থাকলে দিন"
-                className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
               />
             </div>
           )}
