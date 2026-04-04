@@ -450,7 +450,7 @@ export const AuthPage: React.FC = () => {
               let referrerUsername = 'Unknown';
               if (referralCode) {
                 const referralCodeRef = doc(db, 'referral_codes', referralCode.toUpperCase());
-                const referralCodeDoc = await getDoc(referralCodeRef);
+                const referralCodeDoc = await transaction.get(referralCodeRef);
                 
                 if (referralCodeDoc.exists()) {
                   referrerId = referralCodeDoc.data().uid;
