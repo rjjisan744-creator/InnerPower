@@ -702,15 +702,41 @@ export const AdminPanelPage: React.FC = () => {
     }
 
     try {
+      setIsDeleting(true);
       const userToDelete = users.find(u => u.id === userId);
+      
+      const batch = writeBatch(db);
+      
+      // 1. Delete username mapping
       if (userToDelete && userToDelete.username) {
-        await deleteDoc(doc(db, "usernames", userToDelete.username.toLowerCase()));
+        batch.delete(doc(db, "usernames", userToDelete.username.toLowerCase()));
       }
-      await deleteDoc(doc(db, "users", userId));
+      
+      // 2. Delete referral code mapping
+      if (userToDelete && userToDelete.referral_code) {
+        batch.delete(doc(db, "referral_codes", userToDelete.referral_code.toUpperCase()));
+      }
+      
+      // 3. Delete public profile
+      batch.delete(doc(db, "public_profiles", userId));
+      
+      // 4. Delete user document
+      batch.delete(doc(db, "users", userId));
+      
+      // 5. Delete device ID mapping if exists
+      if (userToDelete && userToDelete.device_id) {
+        batch.delete(doc(db, "device_ids", userToDelete.device_id));
+      }
+
+      await batch.commit();
+      
       setUserDeleteConfirmId(null);
-      showToast('ইউজার ডিলিট করা হয়েছে!');
+      showToast('ইউজার এবং তার সকল তথ্য স্থায়ীভাবে মুছে ফেলা হয়েছে!');
     } catch (error) {
       console.error('Error deleting user:', error);
+      showToast('ইউজার ডিলিট করতে সমস্যা হয়েছে।', 'error');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1619,6 +1645,43 @@ export const AdminPanelPage: React.FC = () => {
                                 >
                                   <Copy size={16} />
                                 </button>
+                              </div>
+
+                              <hr className="border-black/5 dark:border-white/5" />
+
+                              {/* Referral History Row */}
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Users size={16} className="text-emerald-500" />
+                                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Referral History</span>
+                                  </div>
+                                  <div className="text-xs font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full">
+                                    {user.referralCount || 0} Referrals
+                                  </div>
+                                </div>
+                                
+                                <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border border-black/5 dark:border-white/5 overflow-hidden">
+                                  {referrals.filter(r => r.referrer_id === user.id).length > 0 ? (
+                                    <div className="divide-y divide-black/5 dark:divide-white/5">
+                                      {referrals.filter(r => r.referrer_id === user.id).map((ref, idx) => (
+                                        <div key={idx} className="p-3 flex items-center justify-between text-[11px] font-bold">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 text-[8px]">
+                                              {(ref.referee_username || 'U')[0].toUpperCase()}
+                                            </div>
+                                            <span>{ref.referee_username || 'Unknown'}</span>
+                                          </div>
+                                          <div className="text-zinc-400 text-[9px]">
+                                            {safeDate(ref.created_at).toLocaleDateString()}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="p-4 text-center text-[10px] text-zinc-400 font-bold italic">No referrals yet</div>
+                                  )}
+                                </div>
                               </div>
 
                               <hr className="border-black/5 dark:border-white/5" />

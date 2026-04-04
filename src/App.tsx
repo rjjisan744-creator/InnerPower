@@ -191,6 +191,11 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 } as any;
                 setUser(newUser);
               } else {
+                if (window.location.pathname !== '/auth') {
+                  console.warn("StatusGuard: Normal user document missing, logging out");
+                  auth.signOut();
+                  localStorage.removeItem('user');
+                }
                 setUser(null);
               }
             }

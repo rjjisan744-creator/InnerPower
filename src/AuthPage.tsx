@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from './AppContext';
-import { LogIn, UserPlus, Shield, FileText, X, MessageSquare, Phone } from 'lucide-react';
+import { LogIn, UserPlus, Shield, FileText, X, MessageSquare, Phone, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SupportContactModal } from './components/SupportContactModal';
 import { auth, db } from './firebase';
@@ -77,7 +77,13 @@ export const AuthPage: React.FC = () => {
     const ref = params.get('ref');
     if (ref) {
       setReferralCode(ref);
+      localStorage.setItem('pending_referral_code', ref);
       setIsLogin(false);
+    } else {
+      const savedRef = localStorage.getItem('pending_referral_code');
+      if (savedRef && !referralCode) {
+        setReferralCode(savedRef);
+      }
     }
     
     if (location.state?.error) {
@@ -532,6 +538,7 @@ export const AuthPage: React.FC = () => {
 
             console.log("AuthPage: Registration and referral completed successfully");
             localStorage.setItem('has_registered', 'true');
+            localStorage.removeItem('pending_referral_code');
             setIsLogin(true);
             setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
           } catch (fsErr: any) {
@@ -849,6 +856,12 @@ export const AuthPage: React.FC = () => {
                 placeholder="রেফার কোড থাকলে দিন"
                 className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
               />
+              {referralCode && localStorage.getItem('pending_referral_code') === referralCode && (
+                <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                  <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Code Applied Automatically</span>
+                </div>
+              )}
             </div>
           )}
 
