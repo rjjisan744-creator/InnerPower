@@ -35,8 +35,21 @@ export const AUTHORIZED_ADMIN_EMAILS = [
 ];
 
 const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => {
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState(() => {
+    // If on auth page or have cached user, don't show global loader immediately
+    return window.location.pathname !== '/auth' && !localStorage.getItem('user');
+  });
   const location = useLocation();
 
   useEffect(() => {
@@ -69,19 +82,16 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       }
 
       if (firebaseUser) {
-        // Try to load from localStorage as a fallback while waiting for Firestore
+        // Fallback to localStorage if Firestore is slow
         const storedUserStr = localStorage.getItem('user');
         if (storedUserStr) {
           try {
             const storedUser = JSON.parse(storedUserStr);
             if (storedUser.id === firebaseUser.uid) {
-              console.log("StatusGuard: Using cached user as fallback");
               setUser(storedUser);
-              setLoading(false); // Show the app immediately if we have cached data
+              setLoading(false);
             }
-          } catch (e) {
-            console.error("StatusGuard: Failed to parse cached user", e);
-          }
+          } catch (e) {}
         }
 
         try {

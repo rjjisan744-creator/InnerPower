@@ -94,6 +94,7 @@ export const AuthPage: React.FC = () => {
     }
   }, [location.search, location.state]);
 
+  const [isLoading, setIsLoading] = useState(false);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [dialogType, setDialogType] = useState<'blocked' | 'pending'>('blocked');
   const [authText, setAuthText] = useState('');
@@ -122,7 +123,23 @@ export const AuthPage: React.FC = () => {
           return;
         }
         
-        // Check database (usernames collection)
+        // Check database (usernames collection) - Try cache first
+        try {
+          const usernameCache = await getDocFromCache(doc(db, "usernames", sanitized));
+          if (usernameCache.exists()) {
+            setIsUsernameAvailable(false);
+            const suggestions = [
+              `${sanitized}${Math.floor(Math.random() * 999)}`,
+              `${sanitized}_${Math.random().toString(36).substring(2, 5)}`,
+              `user_${sanitized}`,
+              `${sanitized}24`
+            ];
+            setUsernameSuggestions(suggestions);
+            setIsCheckingUsername(false);
+            return;
+          }
+        } catch (e) {}
+
         const usernameDoc = await getDoc(doc(db, "usernames", sanitized));
         if (usernameDoc.exists()) {
           setIsUsernameAvailable(false);
@@ -170,31 +187,37 @@ export const AuthPage: React.FC = () => {
   }, [username, isLogin]);
 
   useEffect(() => {
-    const testConnection = async () => {
-      try {
-        await getDocFromServer(doc(db, 'settings', 'auth_text'));
-        console.log("Firestore connection successful");
-      } catch (error: any) {
-        console.error("Firestore connection test failed:", error);
-      }
-    };
-    testConnection();
-  }, []);
-
-  useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const authTextDoc = await getDoc(doc(db, 'settings', 'auth_text'));
-        if (authTextDoc.exists()) {
-          setAuthText(authTextDoc.data().value || '');
+        // Try cache first for faster loading
+        let authTextVal = '';
+        let smsSupportVal = '';
+
+        try {
+          const authTextCache = await getDocFromCache(doc(db, 'settings', 'auth_text'));
+          if (authTextCache.exists()) authTextVal = authTextCache.data().value || '';
+        } catch (e) {}
+
+        try {
+          const smsSupportCache = await getDocFromCache(doc(db, 'settings', 'sms_support_number'));
+          if (smsSupportCache.exists()) smsSupportVal = smsSupportCache.data().value || '';
+        } catch (e) {}
+
+        if (authTextVal) setAuthText(authTextVal);
+        if (smsSupportVal) setSmsSupportNumber(smsSupportVal);
+
+        // Then fetch from server if needed or to update cache
+        const [authTextDoc, smsSupportDoc] = await Promise.all([
+          getDoc(doc(db, 'settings', 'auth_text')),
+          getDoc(doc(db, 'settings', 'sms_support_number'))
+        ]);
+
+        if (authTextDoc.exists()) setAuthText(authTextDoc.data().value || '');
+        if (smsSupportDoc.exists()) setSmsSupportNumber(smsSupportDoc.data().value || '');
+      } catch (err: any) {
+        if (err.code !== 'resource-exhausted') {
+          console.error("Error fetching settings:", err);
         }
-        
-        const smsSupportDoc = await getDoc(doc(db, 'settings', 'sms_support_number'));
-        if (smsSupportDoc.exists()) {
-          setSmsSupportNumber(smsSupportDoc.data().value || '');
-        }
-      } catch (err) {
-        console.error("Error fetching settings:", err);
       }
     };
     fetchSettings();
@@ -263,6 +286,7 @@ export const AuthPage: React.FC = () => {
     const email = sanitizedUsername.includes('@') ? sanitizedUsername : `${sanitizedUsername}@innerpower.app`;
 
     try {
+      setIsLoading(true);
       if (isLogin) {
         try {
           const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -344,7 +368,9 @@ export const AuthPage: React.FC = () => {
           navigate('/');
         } catch (authErr: any) {
           console.error("Login error:", authErr);
-          if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
+          if (authErr.code === 'resource-exhausted') {
+            setError("দুঃখিত, আমাদের সার্ভারের দৈনিক লিমিট শেষ হয়ে গেছে। দয়া করে আগামীকাল আবার চেষ্টা করুন অথবা অ্যাডমিনের সাথে যোগাযোগ করুন।");
+          } else if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
             setError("ভুল ইউজারনেম বা পাসওয়ার্ড। দয়া করে সঠিক তথ্য দিন।");
           } else if (authErr.code === 'auth/operation-not-allowed') {
             setError("Firebase সেটিংস সমস্যা: দয়া করে Firebase Console থেকে Email/Password মেথডটি Enable করুন। এটি ছাড়া অ্যাপ কাজ করবে না।");
@@ -462,8 +488,12 @@ export const AuthPage: React.FC = () => {
             setIsLogin(true);
             setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
           } catch (fsErr: any) {
-            const detailedError = handleFirestoreError(fsErr, OperationType.WRITE, `users/${userCredential.user.uid}`);
-            setError(`ডাটাবেসে তথ্য সেভ করতে সমস্যা হয়েছে: ${detailedError}`);
+            if (fsErr.code === 'resource-exhausted') {
+              setError("দুঃখিত, আমাদের সার্ভারের দৈনিক লিমিট শেষ হয়ে গেছে। দয়া করে আগামীকাল আবার চেষ্টা করুন।");
+            } else {
+              const detailedError = handleFirestoreError(fsErr, OperationType.WRITE, `users/${userCredential.user.uid}`);
+              setError(`ডাটাবেসে তথ্য সেভ করতে সমস্যা হয়েছে: ${detailedError}`);
+            }
             
             // Cleanup orphaned Auth account if Firestore setup failed
             try {
@@ -519,7 +549,13 @@ export const AuthPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Submit error:", err);
-      setError("সার্ভার থেকে ভুল রেসপন্স এসেছে। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।");
+      if (err.code === 'resource-exhausted') {
+        setError("দুঃখিত, আমাদের সার্ভারের দৈনিক লিমিট শেষ হয়ে গেছে। দয়া করে আগামীকাল আবার চেষ্টা করুন।");
+      } else {
+        setError("সার্ভার থেকে ভুল রেসপন্স এসেছে। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।");
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -814,10 +850,17 @@ export const AuthPage: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl font-bold transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+            disabled={isLoading}
+            className="w-full py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl font-bold transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
           >
-            {isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}
-            {isLogin ? t('login') : t('register')}
+            {isLoading ? (
+              <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                {isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}
+                {isLogin ? t('login') : t('register')}
+              </>
+            )}
           </button>
         </form>
 
