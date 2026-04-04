@@ -454,23 +454,29 @@ export const AuthPage: React.FC = () => {
                 
                 if (referralCodeDoc.exists()) {
                   referrerId = referralCodeDoc.data().uid;
-                  const referrerRef = doc(db, 'users', referrerId);
-                  const referrerDoc = await transaction.get(referrerRef);
+                  const referrerProfileRef = doc(db, 'public_profiles', referrerId);
+                  const referrerProfileDoc = await transaction.get(referrerProfileRef);
                   
-                  if (referrerDoc.exists()) {
-                    const referrerData = referrerDoc.data();
+                  if (referrerProfileDoc.exists()) {
+                    const referrerData = referrerProfileDoc.data();
                     if (referrerData.referral_count < 10) {
                       referrerUsername = referrerData.username || 'Unknown';
                       
-                      // Increment referrer's count
-                      transaction.update(referrerRef, {
+                      // Increment referrer's count in public profile
+                      transaction.update(referrerProfileRef, {
+                        referral_count: increment(1)
+                      });
+                      
+                      // Also update users collection for admin view if needed
+                      const referrerUserRef = doc(db, 'users', referrerId);
+                      transaction.update(referrerUserRef, {
                         referral_count: increment(1)
                       });
                     } else {
                       referrerId = null; // Max referrals reached
                     }
                   } else {
-                    referrerId = null; // Referrer doc missing
+                    referrerId = null; // Referrer profile missing
                   }
                 }
               }
@@ -496,6 +502,11 @@ export const AuthPage: React.FC = () => {
               // 4. Perform all writes
               transaction.set(usernameRef, { uid: userCredential.user.uid });
               transaction.set(doc(db, 'users', userCredential.user.uid), userData);
+              transaction.set(doc(db, 'public_profiles', userCredential.user.uid), {
+                username: sanitizedUsername,
+                referral_code: myReferralCode,
+                referral_count: 0
+              });
               transaction.set(doc(db, 'referral_codes', myReferralCode), { uid: userCredential.user.uid });
 
               if (referrerId) {

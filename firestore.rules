@@ -138,10 +138,9 @@ service cloud.firestore {
                      (resource.data.user_id is string && resource.data.user_id.matches("^web-.*"));
       allow create: if isAuthenticated() || 
                        (request.resource.data.user_id is string && request.resource.data.user_id.matches("^web-.*"));
-      allow update: if isAdmin() || (
-        (isAuthenticated() && resource.data.user_id == request.auth.uid) ||
-        (resource.data.user_id is string && resource.data.user_id.matches("^web-.*"))
-      );
+      allow update: if isAdmin() || 
+                       (isAuthenticated() && resource.data.user_id == request.auth.uid) ||
+                       (resource.data.user_id is string && resource.data.user_id.matches("^web-.*"));
       allow delete: if isAdmin();
     }
 
@@ -160,6 +159,16 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow delete: if isAdmin();
+    }
+
+    match /public_profiles/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isAdmin() || (
+        isAuthenticated() && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['referral_count']) &&
+        request.resource.data.referral_count == resource.data.referral_count + 1
+      );
     }
 
     match /device_ids/{deviceId} {

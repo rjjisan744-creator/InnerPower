@@ -687,7 +687,7 @@ export const HomePage: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="বই বা লেখকের নাম দিয়ে খুঁজুন..."
-              className="w-full p-4 pl-12 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-black/5 dark:border-white/5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-bold"
+              className="w-full p-4 pl-12 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-black/5 dark:border-white/5 text-base outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-bold"
             />
             <Settings className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
           </div>
@@ -879,7 +879,7 @@ export const HomePage: React.FC = () => {
                       setCategoryPassword(e.target.value);
                       setPasswordError(false);
                     }}
-                    className={`w-full px-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-2 outline-none transition-all text-center font-bold tracking-widest ${
+                    className={`w-full px-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 border-2 outline-none transition-all text-center font-bold tracking-widest text-base ${
                       passwordError ? 'border-red-500' : 'border-transparent focus:border-emerald-500'
                     }`}
                     autoFocus
