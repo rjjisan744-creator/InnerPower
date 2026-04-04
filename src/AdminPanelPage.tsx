@@ -65,17 +65,17 @@ export const AdminPanelPage: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkText, setBulkText] = useState('');
-  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
-  const [editingPasswordUserId, setEditingPasswordUserId] = useState<number | null>(null);
-  const [editingOrderBookId, setEditingOrderBookId] = useState<number | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [editingPasswordUserId, setEditingPasswordUserId] = useState<string | null>(null);
+  const [editingOrderBookId, setEditingOrderBookId] = useState<string | null>(null);
   const [newOrderIndex, setNewOrderIndex] = useState<number>(0);
   const [newPassword, setNewPassword] = useState('');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
-  const [userDeleteConfirmId, setUserDeleteConfirmId] = useState<number | null>(null);
-  const [permDeleteConfirmId, setPermDeleteConfirmId] = useState<number | null>(null);
-  const [restoreConfirmId, setRestoreConfirmId] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [userDeleteConfirmId, setUserDeleteConfirmId] = useState<string | null>(null);
+  const [permDeleteConfirmId, setPermDeleteConfirmId] = useState<string | null>(null);
+  const [restoreConfirmId, setRestoreConfirmId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [editingTrialUserId, setEditingTrialUserId] = useState<number | null>(null);
+  const [editingTrialUserId, setEditingTrialUserId] = useState<string | null>(null);
   const [newTrialDate, setNewTrialDate] = useState('');
 
   // Category Form State
@@ -93,7 +93,7 @@ export const AdminPanelPage: React.FC = () => {
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
   const [notifType, setNotifType] = useState('info');
-  const [notifUserId, setNotifUserId] = useState<number | null>(null);
+  const [notifUserId, setNotifUserId] = useState<string | null>(null);
   const [isSendingNotif, setIsSendingNotif] = useState(false);
 
   const safeDate = (date: any) => {
@@ -263,8 +263,15 @@ export const AdminPanelPage: React.FC = () => {
         setIsLoading(false);
       });
 
-      const unsubNotifications = onSnapshot(query(collection(db, "notifications"), orderBy("created_at", "desc"), limit(100)), (snap) => {
-        setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const unsubNotifications = onSnapshot(query(collection(db, "notifications"), limit(200)), (snap) => {
+        const notifs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Sort in memory to avoid index issues
+        notifs.sort((a: any, b: any) => {
+          const timeA = a.created_at ? (a.created_at.toMillis ? a.created_at.toMillis() : new Date(a.created_at).getTime()) : 0;
+          const timeB = b.created_at ? (b.created_at.toMillis ? b.created_at.toMillis() : new Date(b.created_at).getTime()) : 0;
+          return timeB - timeA;
+        });
+        setNotifications(notifs);
         setIsLoading(false);
       }, (err) => {
         console.error('AdminPanel: Notifications listener error:', err);
@@ -366,14 +373,22 @@ export const AdminPanelPage: React.FC = () => {
       const q = query(collection(db, "support_messages"), where("user_id", "==", selectedChatUser.user_id), orderBy("created_at", "asc"));
       const unsub = onSnapshot(q, (snap) => {
         setChatMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        // Mark as read
-        const batch = writeBatch(db);
-        snap.docs.forEach(d => {
-          if (d.data().status === 'unread' && d.data().sender_role === 'user') {
-            batch.update(d.ref, { status: 'read' });
+      // Mark as read
+      const batch = writeBatch(db);
+      let hasChanges = false;
+      snap.docs.forEach(d => {
+        if (d.data().status === 'unread' && d.data().sender_role === 'user') {
+          batch.update(d.ref, { status: 'read' });
+          hasChanges = true;
+        }
+      });
+      if (hasChanges) {
+        batch.commit().catch(err => {
+          if (err.code !== 'resource-exhausted') {
+            console.error("AdminPanel: Batch commit error:", err);
           }
         });
-        batch.commit();
+      }
       });
       return () => unsub();
     }
@@ -496,11 +511,21 @@ export const AdminPanelPage: React.FC = () => {
 
     setIsSendingNotif(true);
     try {
+      let userName = null;
+      if (notifUserId) {
+        const userSnap = await getDoc(doc(db, "users", notifUserId));
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          userName = userData.full_name || userData.username || "Unknown User";
+        }
+      }
+
       await addDoc(collection(db, "notifications"), {
         title: notifTitle,
         message: notifMessage,
         type: notifType,
         user_id: notifUserId || null,
+        user_name: userName,
         created_at: serverTimestamp()
       });
       showToast('নোটিফিকেশন পাঠানো হয়েছে!');
@@ -711,13 +736,30 @@ export const AdminPanelPage: React.FC = () => {
     }
   };
 
-  const handleApproveSubscription = async (subId: string, userId: string) => {
+  const handleApproveSubscription = async (subId: string, userId: string, amount?: number) => {
+    if (!userId) {
+      showToast('User ID is missing!', 'error');
+      return;
+    }
+
     handleConfirm('আপনি কি নিশ্চিতভাবে এই সাবস্ক্রিপশনটি এপ্রুভ করতে চান?', async () => {
       try {
+        console.log(`AdminPanel: Approving subscription ${subId} for user ${userId}`);
         await runTransaction(db, async (transaction) => {
           const subRef = doc(db, "subscriptions", subId);
           const userRef = doc(db, "users", userId);
           
+          const userSnap = await transaction.get(userRef);
+          if (!userSnap.exists()) throw new Error("User not found");
+          const userData = userSnap.data();
+          const userName = userData?.full_name || userData?.username || "Unknown User";
+          
+          const subSnap = await transaction.get(subRef);
+          if (!subSnap.exists()) throw new Error("Subscription not found");
+          
+          const subData = subSnap.data();
+          const subAmount = amount || subData?.amount || 100;
+
           transaction.update(subRef, { status: 'approved' });
           
           const now = new Date();
@@ -733,16 +775,18 @@ export const AdminPanelPage: React.FC = () => {
           const notifRef = doc(collection(db, "notifications"));
           transaction.set(notifRef, {
             user_id: userId,
+            user_name: userName,
             title: "সাবস্ক্রিপশন সফল!",
-            message: "আপনার ১ বছরের সাবস্ক্রিপশন সফলভাবে একটিভ করা হয়েছে। ধন্যবাদ!",
+            message: `আপনি আমাদের সাবস্ক্রিপশন প্যাক কিনেছেন ${subAmount} টাকা দিয়ে। আপনার ১ বছরের সাবস্ক্রিপশন সফলভাবে একটিভ করা হয়েছে। ধন্যবাদ!`,
             type: "success",
             created_at: serverTimestamp()
           });
+          console.log(`AdminPanel: Notification created for user ${userId}`);
         });
         showToast('সাবস্ক্রিপশন এপ্রুভ হয়েছে!');
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error approving subscription:', error);
-        showToast('Failed to approve subscription', 'error');
+        showToast(`Failed to approve: ${error.message}`, 'error');
       }
     });
   };
@@ -750,10 +794,15 @@ export const AdminPanelPage: React.FC = () => {
   const handleRejectSubscription = async (subId: string, userId: string) => {
     handleConfirm('আপনি কি নিশ্চিতভাবে এই সাবস্ক্রিপশনটি রিজেক্ট করতে চান?', async () => {
       try {
+        const userSnap = await getDoc(doc(db, "users", userId));
+        const userData = userSnap.data();
+        const userName = userData?.full_name || userData?.username || "Unknown User";
+
         await updateDoc(doc(db, "subscriptions", subId), { status: 'rejected' });
         await updateDoc(doc(db, "users", userId), { has_pending_subscription: false });
         await addDoc(collection(db, "notifications"), {
           user_id: userId,
+          user_name: userName,
           title: "পেমেন্ট রিজেক্ট করা হয়েছে",
           message: "আপনার পেমেন্ট রিকোয়েস্টটি সঠিক না হওয়ায় রিজেক্ট করা হয়েছে। দয়া করে সঠিক তথ্য দিয়ে পুনরায় চেষ্টা করুন।",
           type: "error",
@@ -1278,8 +1327,8 @@ export const AdminPanelPage: React.FC = () => {
                   <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                     {[
                       { id: 'all', label: 'সব ইউজার', count: users.length, color: 'bg-zinc-500' },
-                      { id: 'online', label: 'অনলাইন', count: users.filter(u => u.last_active_at && (new Date().getTime() - safeDate(u.last_active_at).getTime() < 300000)).length, color: 'bg-emerald-500' },
-                      { id: 'offline', label: 'অফলাইন', count: users.filter(u => !u.last_active_at || (new Date().getTime() - safeDate(u.last_active_at).getTime() >= 300000)).length, color: 'bg-zinc-400' },
+                      { id: 'online', label: 'অনলাইন', count: users.filter(u => u.last_active_at && (new Date().getTime() - safeDate(u.last_active_at).getTime() < 1800000)).length, color: 'bg-emerald-500' },
+                      { id: 'offline', label: 'অফলাইন', count: users.filter(u => !u.last_active_at || (new Date().getTime() - safeDate(u.last_active_at).getTime() >= 1800000)).length, color: 'bg-zinc-400' },
                       { id: 'expired', label: 'মেয়াদ শেষ', count: users.filter(u => u.trialEndsAt && new Date() > safeDate(u.trialEndsAt)).length, color: 'bg-orange-500' },
                       { id: 'pending', label: 'পেন্ডিং', count: users.filter(u => u.status === 'pending').length, color: 'bg-amber-500' },
                       { id: 'active', label: 'একটিভ', count: users.filter(u => u.status === 'active').length, color: 'bg-blue-500' },
@@ -1336,7 +1385,7 @@ export const AdminPanelPage: React.FC = () => {
                                 />
                               </div>
                               {/* Online Status Indicator */}
-                              {user.last_active_at && (new Date().getTime() - new Date(user.last_active_at).getTime() < 300000) && (
+                              {user.last_active_at && (new Date().getTime() - safeDate(user.last_active_at).getTime() < 1800000) && (
                                 <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-zinc-800 rounded-full shadow-sm"></div>
                               )}
                             </div>
@@ -1345,8 +1394,8 @@ export const AdminPanelPage: React.FC = () => {
                                 <div className="font-black text-lg tracking-tight text-zinc-900 dark:text-white leading-tight">
                                   {user.fullName || user.username}
                                 </div>
-                                {user.last_active_at && (new Date().getTime() - safeDate(user.last_active_at).getTime() < 300000) && (
-                                  <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">Active Now</span>
+                                {user.last_active_at && (new Date().getTime() - safeDate(user.last_active_at).getTime() < 1800000) && (
+                                  <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">Active Recently</span>
                                 )}
                                 {user.status === 'blocked' && user.block_reason === 'multi_account' && (
                                   <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 px-1.5 py-0.5 rounded">Multi-Account</span>
@@ -1876,7 +1925,7 @@ export const AdminPanelPage: React.FC = () => {
                       {sub.status === 'pending' && (
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleApproveSubscription(sub.id, sub.user_id)}
+                            onClick={() => handleApproveSubscription(sub.id, sub.user_id, sub.amount)}
                             className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20"
                           >
                             Approve
@@ -1939,7 +1988,7 @@ export const AdminPanelPage: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Target User (Optional)</label>
                     <select
                       value={notifUserId || ''}
-                      onChange={(e) => setNotifUserId(e.target.value ? parseInt(e.target.value) : null)}
+                      onChange={(e) => setNotifUserId(e.target.value || null)}
                       className="w-full p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
                     >
                       <option value="">All Users (Global)</option>

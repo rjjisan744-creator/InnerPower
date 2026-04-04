@@ -36,8 +36,13 @@ export const HomePage: React.FC = () => {
   const [resumeBook, setResumeBook] = useState<{ id: number, title: string, lastPage: number } | null>(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [userNotifs, setUserNotifs] = useState<any[]>([]);
+  const [globalNotifs, setGlobalNotifs] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [lastSeenTime, setLastSeenTime] = useState<number>(() => {
+    return parseInt(localStorage.getItem('lastSeenNotificationTime') || '0');
+  });
   const [unreadSupportCount, setUnreadSupportCount] = useState(0);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [trialDaysLeft, setTrialDaysLeft] = useState<number | null>(null);
@@ -49,6 +54,23 @@ export const HomePage: React.FC = () => {
   const [showSubscription, setShowSubscription] = useState(true);
   const { t, language, setLanguage, theme, setTheme } = useApp();
   const navigate = useNavigate();
+
+  // Merge and sort notifications in memory
+  useEffect(() => {
+    const allNotifs = [...userNotifs, ...globalNotifs].sort((a, b) => {
+      const timeA = a.created_at ? (a.created_at.toMillis ? a.created_at.toMillis() : new Date(a.created_at).getTime()) : 0;
+      const timeB = b.created_at ? (b.created_at.toMillis ? b.created_at.toMillis() : new Date(b.created_at).getTime()) : 0;
+      return timeB - timeA;
+    });
+    
+    setNotifications(allNotifs.slice(0, 50));
+    
+    const unread = allNotifs.filter((n: any) => {
+      const createdAt = n.created_at ? (n.created_at.toMillis ? n.created_at.toMillis() : new Date(n.created_at).getTime()) : 0;
+      return createdAt > lastSeenTime;
+    }).length;
+    setUnreadCount(unread);
+  }, [userNotifs, globalNotifs, lastSeenTime]);
 
   const safeDate = (date: any) => {
     if (!date) return new Date(0);
@@ -97,15 +119,23 @@ export const HomePage: React.FC = () => {
           
           // If trial_ends_at is missing, initialize it (3 days from created_at or now)
           if (!trialEndsAt) {
-            const createdAt = data.created_at ? safeDate(data.created_at) : now;
-            const newTrialEnds = new Date(createdAt);
-            newTrialEnds.setDate(newTrialEnds.getDate() + 3);
-            trialEndsAt = newTrialEnds.toISOString();
-            
-            // Update Firestore
-            updateDoc(doc(db, 'users', docSnap.id), { trial_ends_at: trialEndsAt }).catch(err => {
-              console.error('Error initializing trial_ends_at:', err);
-            });
+            const sessionKey = `trial_init_${docSnap.id}`;
+            if (!sessionStorage.getItem(sessionKey)) {
+              const createdAt = data.created_at ? safeDate(data.created_at) : now;
+              const newTrialEnds = new Date(createdAt);
+              newTrialEnds.setDate(newTrialEnds.getDate() + 3);
+              trialEndsAt = newTrialEnds.toISOString();
+              
+              // Update Firestore
+              updateDoc(doc(db, 'users', docSnap.id), { trial_ends_at: trialEndsAt }).then(() => {
+                sessionStorage.setItem(sessionKey, 'true');
+              }).catch(err => {
+                if (err.code === 'resource-exhausted') {
+                  sessionStorage.setItem(sessionKey, 'true');
+                }
+                console.error('Error initializing trial_ends_at:', err);
+              });
+            }
           }
 
           const trialEnds = safeDate(trialEndsAt);
@@ -159,22 +189,17 @@ export const HomePage: React.FC = () => {
         });
       }, (err) => console.error('HomePage: Settings listener error:', err));
 
-      // Fetch Notifications
-      const qNotif = query(
-        collection(db, 'notifications'), 
-        where('user_id', 'in', [null, firebaseUser.uid]),
-        orderBy('created_at', 'desc'),
-        limit(20)
-      );
-      const unsubNotif = onSnapshot(qNotif, (snapshot) => {
-        const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setNotifications(notifs);
-        
-        const lastSeenId = localStorage.getItem('lastSeenNotificationId') || '';
-        const unread = notifs.filter((n: any) => n.id > lastSeenId).length;
-        setUnreadCount(unread);
-      }, (err) => console.error('HomePage: Notifications listener error:', err));
-      
+      // Fetch Notifications - Using two listeners to avoid index issues with 'in' operator
+      const unsubUserNotifs = onSnapshot(query(collection(db, 'notifications'), where('user_id', '==', firebaseUser.uid)), (snap) => {
+        const notifs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setUserNotifs(notifs);
+      }, (err) => console.error('HomePage: User notifications listener error:', err));
+
+      const unsubGlobalNotifs = onSnapshot(query(collection(db, 'notifications'), where('user_id', '==', null)), (snap) => {
+        const notifs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setGlobalNotifs(notifs);
+      }, (err) => console.error('HomePage: Global notifications listener error:', err));
+
       // Fetch Unread Support Messages
       const qSupport = query(
         collection(db, 'support_messages'),
@@ -186,33 +211,53 @@ export const HomePage: React.FC = () => {
         setUnreadSupportCount(snapshot.size);
       }, (err) => console.error('HomePage: Support messages listener error:', err));
 
-      // Heartbeat ping to track activity
-      const pingInterval = setInterval(() => {
-        if (firebaseUser.uid) {
+      // Update activity once on load to save quota
+      if (firebaseUser.uid) {
+        const sessionKey = `ping_${firebaseUser.uid}`;
+        if (!sessionStorage.getItem(sessionKey)) {
           updateDoc(doc(db, 'users', firebaseUser.uid), {
             last_active_at: serverTimestamp()
-          }).catch(err => console.error("Ping error:", err));
-        }
-      }, 30000);
-
-      // Request location
-      if (navigator.geolocation && firebaseUser.uid) {
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            const { latitude, longitude } = position.coords;
-            try {
-              await updateDoc(doc(db, 'users', firebaseUser.uid), {
-                latitude,
-                longitude,
-                last_active_at: serverTimestamp()
-              });
-            } catch (err) {
-              console.error("Location update error:", err);
+          }).then(() => {
+            sessionStorage.setItem(sessionKey, 'true');
+          }).catch(err => {
+            if (err.code === 'resource-exhausted') {
+              sessionStorage.setItem(sessionKey, 'true');
+            } else {
+              console.error("Initial ping error:", err);
             }
-          },
-          (err) => console.warn("Location access denied or error:", err),
-          { enableHighAccuracy: false, timeout: 10000 }
-        );
+          });
+        }
+      }
+
+      // Request location once on load
+      if (navigator.geolocation && firebaseUser.uid) {
+        const sessionKey = `loc_${firebaseUser.uid}`;
+        if (!sessionStorage.getItem(sessionKey)) {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const { latitude, longitude } = position.coords;
+              try {
+                await updateDoc(doc(db, 'users', firebaseUser.uid), {
+                  latitude,
+                  longitude,
+                  last_active_at: serverTimestamp()
+                });
+                sessionStorage.setItem(sessionKey, 'true');
+              } catch (err: any) {
+                if (err.code === 'resource-exhausted') {
+                  sessionStorage.setItem(sessionKey, 'true');
+                } else {
+                  console.error("Location update error:", err);
+                }
+              }
+            },
+            (err) => {
+              console.warn("Location access denied or error:", err);
+              sessionStorage.setItem(sessionKey, 'true');
+            },
+            { enableHighAccuracy: false, timeout: 10000 }
+          );
+        }
       }
 
       return () => {
@@ -220,9 +265,9 @@ export const HomePage: React.FC = () => {
         unsubBooks();
         unsubCats();
         unsubSettings();
-        unsubNotif();
+        unsubUserNotifs();
+        unsubGlobalNotifs();
         unsubSupport();
-        clearInterval(pingInterval);
       };
     });
 
@@ -233,11 +278,10 @@ export const HomePage: React.FC = () => {
 
   const handleOpenNotifications = () => {
     setShowNotifications(true);
-    if (notifications.length > 0) {
-      const maxId = notifications[0].id;
-      localStorage.setItem('lastSeenNotificationId', maxId.toString());
-      setUnreadCount(0);
-    }
+    const now = Date.now();
+    localStorage.setItem('lastSeenNotificationTime', now.toString());
+    setLastSeenTime(now);
+    setUnreadCount(0);
   };
 
   const handleCategoryClick = (cat: Category) => {

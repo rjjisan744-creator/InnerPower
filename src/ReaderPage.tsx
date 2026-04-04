@@ -143,12 +143,21 @@ export const ReaderPage: React.FC = () => {
           console.error("ReaderPage: Book listener error:", err);
         });
 
-        // Add to reading history
-        addDoc(collection(db, 'reading_history'), {
-          user_id: firebaseUser.uid,
-          book_id: id,
-          read_at: serverTimestamp()
-        }).catch(err => console.error("ReaderPage: History error:", err));
+        // Add to reading history only once per session per book to save quota
+        const sessionKey = `read_${id}`;
+        if (!sessionStorage.getItem(sessionKey)) {
+          addDoc(collection(db, 'reading_history'), {
+            user_id: firebaseUser.uid,
+            book_id: id,
+            read_at: serverTimestamp()
+          }).then(() => {
+            sessionStorage.setItem(sessionKey, 'true');
+          }).catch(err => {
+            if (err.code !== 'resource-exhausted') {
+              console.error("ReaderPage: History error:", err);
+            }
+          });
+        }
       }
 
       return () => {

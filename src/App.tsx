@@ -97,13 +97,32 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                                    (['rjjisan744@innerpower.app', 'admin@innerpower.app'].includes(firebaseUser.email || '') && firebaseUser.emailVerified);
               
               if (isAdminEmail && userData.role !== 'admin') {
-                console.log("StatusGuard: Promoting authorized verified email to admin role");
-                updateDoc(docSnap.ref, { role: 'admin' }).catch(err => console.error("Failed to promote user:", err));
+                const sessionKey = `promoted_${firebaseUser.uid}`;
+                if (!sessionStorage.getItem(sessionKey)) {
+                  console.log("StatusGuard: Promoting authorized verified email to admin role");
+                  updateDoc(docSnap.ref, { role: 'admin' }).then(() => {
+                    sessionStorage.setItem(sessionKey, 'true');
+                  }).catch(err => {
+                    if (err.code === 'resource-exhausted') {
+                      sessionStorage.setItem(sessionKey, 'true'); // Don't retry this session
+                    }
+                    console.error("Failed to promote user:", err);
+                  });
+                }
                 userData.role = 'admin';
               } else if (!isAdminEmail && userData.role === 'admin') {
-                // SECURITY: Demote anyone who isn't an authorized verified admin email
-                console.warn("StatusGuard: Unauthorized admin detected, demoting to user role");
-                updateDoc(docSnap.ref, { role: 'user' }).catch(err => console.error("Failed to demote user:", err));
+                const sessionKey = `demoted_${firebaseUser.uid}`;
+                if (!sessionStorage.getItem(sessionKey)) {
+                  console.warn("StatusGuard: Unauthorized admin detected, demoting to user role");
+                  updateDoc(docSnap.ref, { role: 'user' }).then(() => {
+                    sessionStorage.setItem(sessionKey, 'true');
+                  }).catch(err => {
+                    if (err.code === 'resource-exhausted') {
+                      sessionStorage.setItem(sessionKey, 'true'); // Don't retry this session
+                    }
+                    console.error("Failed to demote user:", err);
+                  });
+                }
                 userData.role = 'user';
               }
 
@@ -131,7 +150,7 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                                    (['rjjisan744@innerpower.app', 'admin@innerpower.app'].includes(firebaseUser.email || '') && firebaseUser.emailVerified);
               
               if (isAdminEmail) {
-                console.log("StatusGuard: Auto-creating missing admin profile");
+                const sessionKey = `created_${firebaseUser.uid}`;
                 const adminData = {
                   username: firebaseUser.email?.split('@')[0] || 'admin',
                   role: 'admin',
@@ -141,7 +160,18 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   email: firebaseUser.email,
                   trial_ends_at: new Date(Date.now() + 86400000 * 365).toISOString() // 1 year for admin
                 };
-                setDoc(doc(db, 'users', firebaseUser.uid), adminData).catch(err => console.error("Failed to auto-create admin:", err));
+
+                if (!sessionStorage.getItem(sessionKey)) {
+                  console.log("StatusGuard: Auto-creating missing admin profile");
+                  setDoc(doc(db, 'users', firebaseUser.uid), adminData).then(() => {
+                    sessionStorage.setItem(sessionKey, 'true');
+                  }).catch(err => {
+                    if (err.code === 'resource-exhausted') {
+                      sessionStorage.setItem(sessionKey, 'true');
+                    }
+                    console.error("Failed to auto-create admin:", err);
+                  });
+                }
                 
                 const newUser: User = {
                   id: firebaseUser.uid,

@@ -60,7 +60,11 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
           }
         });
         if (hasChanges) {
-          batch.commit().catch(err => console.error("SupportContactModal: Batch commit error:", err));
+          batch.commit().catch(err => {
+            if (err.code !== 'resource-exhausted') {
+              console.error("SupportContactModal: Batch commit error:", err);
+            }
+          });
         }
       }, (err) => {
         console.error("SupportContactModal: Messages listener error:", err);
