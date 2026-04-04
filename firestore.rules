@@ -15,10 +15,10 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
         (
-          request.auth.token.get('email', '') == "rjjisan744@gmail.com" ||
+          request.auth.token.email == "rjjisan744@gmail.com" ||
           (
-            (request.auth.token.get('email', '') == "rjjisan744@innerpower.app" || request.auth.token.get('email', '') == "admin@innerpower.app") && 
-            request.auth.token.get('email_verified', false) == true
+            (request.auth.token.email == "rjjisan744@innerpower.app" || request.auth.token.email == "admin@innerpower.app") && 
+            request.auth.token.email_verified == true
           )
         );
     }
@@ -169,6 +169,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['referral_count']) &&
         request.resource.data.referral_count == resource.data.referral_count + 1
       );
+      allow delete: if isAdmin();
     }
 
     match /device_ids/{deviceId} {
@@ -181,7 +182,7 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow read: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
       allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow delete: if (isAuthenticated() && resource.data.user_id == request.auth.uid) || isAdmin();
     }
 
     match /wishlist/{wishId} {
@@ -192,11 +193,10 @@ service cloud.firestore {
         isAdmin()
       );
       allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
-      allow delete: if isAuthenticated() && (
+      allow delete: if (isAuthenticated() && (
         wishId.startsWith(request.auth.uid) || 
-        (resource != null && resource.data.user_id == request.auth.uid) || 
-        isAdmin()
-      );
+        (resource != null && resource.data.user_id == request.auth.uid)
+      )) || isAdmin();
     }
   }
 }
