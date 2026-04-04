@@ -30,6 +30,7 @@ export const AdminPanelPage: React.FC = () => {
   const [totalUniqueReaders, setTotalUniqueReaders] = useState(0);
   const [activeTab, setActiveTab] = useState<'books' | 'users' | 'recycle' | 'settings' | 'referrals' | 'notifications' | 'categories' | 'subscriptions' | 'support'>('books');
   const [userSearch, setUserSearch] = useState('');
+  const [userLimit, setUserLimit] = useState(100);
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'pending' | 'blocked' | 'active' | 'online' | 'offline' | 'expired'>('all');
   const [bookSearch, setBookSearch] = useState('');
   const [recycleSearch, setRecycleSearch] = useState('');
@@ -178,7 +179,11 @@ export const AdminPanelPage: React.FC = () => {
 
       // Real-time listeners
       console.log("AdminPanel: Setting up users listener...");
-      const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("created_at", "desc"), limit(50)), (snap) => {
+      const usersQuery = userSearch 
+        ? query(collection(db, "users"), where("username", ">=", userSearch.toLowerCase()), where("username", "<=", userSearch.toLowerCase() + "\uf8ff"), limit(userLimit))
+        : query(collection(db, "users"), orderBy("created_at", "desc"), limit(userLimit));
+
+      const unsubUsers = onSnapshot(usersQuery, (snap) => {
         console.log("AdminPanel: Users snapshot received, size:", snap.size);
         const data = snap.docs.map(doc => {
           const d = doc.data();
@@ -218,7 +223,8 @@ export const AdminPanelPage: React.FC = () => {
       });
 
       console.log("AdminPanel: Setting up reading history listener...");
-      const unsubReadingHistory = onSnapshot(collection(db, "reading_history"), (snap) => {
+      // Limit reading history to last 500 entries to save quota and memory
+      const unsubReadingHistory = onSnapshot(query(collection(db, "reading_history"), orderBy("read_at", "desc"), limit(500)), (snap) => {
         console.log("AdminPanel: Reading history snapshot received, size:", snap.size);
         const counts: Record<string, Set<string>> = {};
         const allUniqueReaders = new Set<string>();
@@ -334,7 +340,7 @@ export const AdminPanelPage: React.FC = () => {
         setIsLoading(false);
       });
 
-      const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc")), (snap) => {
+      const unsubReferrals = onSnapshot(query(collection(db, "referrals"), orderBy("created_at", "desc"), limit(100)), (snap) => {
         setReferrals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         setIsLoading(false);
       }, (err) => {
@@ -361,7 +367,7 @@ export const AdminPanelPage: React.FC = () => {
     return () => {
       unsubscribeAuth();
     };
-  }, [navigate]);
+  }, [navigate, userSearch, userLimit]);
 
   const fetchChatMessages = (userId: number | string) => {
     // This is now handled by the real-time listener if we want, 
@@ -1702,6 +1708,17 @@ export const AdminPanelPage: React.FC = () => {
                   })}
                   {filteredUsers.length === 0 && (
                     <div className="py-12 text-center text-zinc-400 text-sm font-bold">কোনো ইউজার পাওয়া যায়নি!</div>
+                  )}
+
+                  {users.length >= userLimit && (
+                    <div className="pt-4 flex justify-center">
+                      <button 
+                        onClick={() => setUserLimit(prev => prev + 100)}
+                        className="px-8 py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl text-xs font-black uppercase tracking-widest hover:scale-105 transition-all shadow-lg"
+                      >
+                        Load More Users
+                      </button>
+                    </div>
                   )}
                 </div>
 

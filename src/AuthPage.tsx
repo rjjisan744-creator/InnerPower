@@ -329,18 +329,31 @@ export const AuthPage: React.FC = () => {
             
             localStorage.setItem('user', JSON.stringify(userObj));
             localStorage.setItem('has_registered', 'true');
+            setIsLoading(false);
             navigate('/');
             return;
           }
 
           const userData = userDoc.data();
           
-          // Update device ID and last login
-          await updateDoc(doc(db, 'users', userCredential.user.uid), {
-            device_id: deviceId,
-            last_login_at: serverTimestamp(),
-            last_active_at: serverTimestamp()
-          });
+          // Update device ID and last login - session guarded to save quota
+          const sessionKey = `login_${userCredential.user.uid}`;
+          if (!sessionStorage.getItem(sessionKey)) {
+            try {
+              await updateDoc(doc(db, 'users', userCredential.user.uid), {
+                device_id: deviceId,
+                last_login_at: serverTimestamp(),
+                last_active_at: serverTimestamp()
+              });
+              sessionStorage.setItem(sessionKey, 'true');
+            } catch (err: any) {
+              if (err.code === 'resource-exhausted') {
+                sessionStorage.setItem(sessionKey, 'true');
+              } else {
+                console.error("Login ping error:", err);
+              }
+            }
+          }
 
           const now = new Date();
           const trialEnds = userData.trial_ends_at ? new Date(userData.trial_ends_at) : new Date(0);
@@ -391,6 +404,7 @@ export const AuthPage: React.FC = () => {
           if (usernameDoc.exists()) {
             setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
             setIsUsernameAvailable(false);
+            setIsLoading(false);
             return;
           }
 

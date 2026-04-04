@@ -198,6 +198,15 @@ const StatusGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             clearTimeout(timeoutId);
           }, (error) => {
             console.error("StatusGuard: Firestore listener error:", error);
+            if (error.code === 'resource-exhausted') {
+              // If quota hit, use cached user if available to allow app to function
+              const stored = localStorage.getItem('user');
+              if (stored) {
+                try {
+                  setUser(JSON.parse(stored));
+                } catch (e) {}
+              }
+            }
             setLoading(false);
             clearTimeout(timeoutId);
           });
