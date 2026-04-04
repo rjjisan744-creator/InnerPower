@@ -703,38 +703,31 @@ export const AdminPanelPage: React.FC = () => {
 
     try {
       setIsDeleting(true);
-      const userToDelete = users.find(u => u.id === userId);
       
-      const batch = writeBatch(db);
-      
-      // 1. Delete username mapping
-      if (userToDelete && userToDelete.username) {
-        batch.delete(doc(db, "usernames", userToDelete.username.toLowerCase()));
-      }
-      
-      // 2. Delete referral code mapping
-      if (userToDelete && userToDelete.referral_code) {
-        batch.delete(doc(db, "referral_codes", userToDelete.referral_code.toUpperCase()));
-      }
-      
-      // 3. Delete public profile
-      batch.delete(doc(db, "public_profiles", userId));
-      
-      // 4. Delete user document
-      batch.delete(doc(db, "users", userId));
-      
-      // 5. Delete device ID mapping if exists
-      if (userToDelete && userToDelete.device_id) {
-        batch.delete(doc(db, "device_ids", userToDelete.device_id));
-      }
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("Authentication token not found");
 
-      await batch.commit();
+      const response = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          adminToken: idToken,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to delete user");
+      }
       
       setUserDeleteConfirmId(null);
       showToast('ইউজার এবং তার সকল তথ্য স্থায়ীভাবে মুছে ফেলা হয়েছে!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting user:', error);
-      showToast('ইউজার ডিলিট করতে সমস্যা হয়েছে।', 'error');
+      showToast(error.message || 'ইউজার ডিলিট করতে সমস্যা হয়েছে।', 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -1454,7 +1447,15 @@ export const AdminPanelPage: React.FC = () => {
                                   Last Active: {safeDate(user.last_active_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
                                 </div>
                               )}
-                              <div className="text-[10px] text-zinc-400">Joined: {regDate}</div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="text-[10px] text-zinc-400">Joined: {regDate}</div>
+                                {user.referredBy && (
+                                  <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Users size={10} />
+                                    {user.referredBy}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">

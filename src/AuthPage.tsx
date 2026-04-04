@@ -10,7 +10,8 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   fetchSignInMethodsForEmail,
-  signInAnonymously
+  signInAnonymously,
+  signOut
 } from 'firebase/auth';
 import { 
   doc, 
@@ -65,6 +66,8 @@ export const AuthPage: React.FC = () => {
     return localStorage.getItem('has_registered') === 'true';
   });
   const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [realEmail, setRealEmail] = useState('');
   const [password, setPassword] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [error, setError] = useState('');
@@ -73,16 +76,20 @@ export const AuthPage: React.FC = () => {
   const location = useLocation();
 
   useEffect(() => {
+    const hasUsedReferral = localStorage.getItem('referral_used_device') === 'true';
     const params = new URLSearchParams(location.search);
     const ref = params.get('ref');
-    if (ref) {
+    
+    if (ref && !hasUsedReferral) {
       setReferralCode(ref);
       localStorage.setItem('pending_referral_code', ref);
       setIsLogin(false);
     } else {
       const savedRef = localStorage.getItem('pending_referral_code');
-      if (savedRef && !referralCode) {
+      if (savedRef && !referralCode && !hasUsedReferral) {
         setReferralCode(savedRef);
+      } else if (hasUsedReferral) {
+        localStorage.removeItem('pending_referral_code');
       }
     }
     
@@ -242,8 +249,18 @@ export const AuthPage: React.FC = () => {
     e.preventDefault();
     setError('');
 
-    if (!username || !password) {
+    if (!isLogin && (!username || !password || !fullName || !realEmail)) {
       setError("সব ঘর পূরণ করুন");
+      return;
+    }
+
+    if (isLogin && (!username || !password)) {
+      setError("সব ঘর পূরণ করুন");
+      return;
+    }
+
+    if (!isLogin && !realEmail.includes('@')) {
+      setError("সঠিক ইমেইল ঠিকানা দিন");
       return;
     }
 
@@ -289,7 +306,9 @@ export const AuthPage: React.FC = () => {
       }
     }
 
-    const email = sanitizedUsername.includes('@') ? sanitizedUsername : `${sanitizedUsername}@innerpower.app`;
+    const email = isLogin 
+      ? (username.includes('@') ? username : `${sanitizedUsername}@innerpower.app`)
+      : realEmail;
 
     try {
       setIsLoading(true);
@@ -299,48 +318,22 @@ export const AuthPage: React.FC = () => {
           const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
           
           if (!userDoc.exists()) {
-            // If user doc doesn't exist but auth succeeded, create it
-            const trialEnds = new Date();
-            trialEnds.setDate(trialEnds.getDate() + 3);
-            const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            
-            const newUserData = {
-              username: sanitizedUsername,
-              password,
-              role: 'user',
-              status: 'active',
-              is_paid: false,
-              device_id: deviceId,
-              created_at: serverTimestamp(),
-              trial_ends_at: trialEnds.toISOString(),
-              referral_code: myReferralCode,
-              referral_count: 0,
-              referred_by: null
-            };
-            
-            await setDoc(doc(db, 'users', userCredential.user.uid), newUserData);
-            
-            const userObj = {
-              id: userCredential.user.uid,
-              username: newUserData.username,
-              role: newUserData.role,
-              status: newUserData.status,
-              isPaid: false,
-              isTrialExpired: false,
-              trialEndsAt: newUserData.trial_ends_at,
-              email: email,
-              referralCode: newUserData.referral_code,
-              referralCount: 0
-            };
-            
-            localStorage.setItem('user', JSON.stringify(userObj));
-            localStorage.setItem('has_registered', 'true');
+            // If user doc doesn't exist but auth succeeded, it means the user was likely deleted from Firestore
+            // but the Auth account still exists. We should not allow login and should probably sign out.
+            await signOut(auth);
+            setError("দুঃখিত, আপনার অ্যাকাউন্টটি খুঁজে পাওয়া যায়নি। এটি হয়তো অ্যাডমিন দ্বারা ডিলিট করা হয়েছে।");
             setIsLoading(false);
-            navigate('/');
             return;
           }
 
           const userData = userDoc.data();
+          
+          if (userData.status === 'deleted') {
+            await auth.signOut();
+            setError("দুঃখিত, আপনার অ্যাকাউন্টটি স্থায়ীভাবে ডিলিট করা হয়েছে। আপনি আর এই অ্যাকাউন্ট দিয়ে লগইন করতে পারবেন না।");
+            setIsLoading(false);
+            return;
+          }
           
           // Update device ID and last login - session guarded to save quota
           const sessionKey = `login_${userCredential.user.uid}`;
@@ -440,6 +433,7 @@ export const AuthPage: React.FC = () => {
             referred_by: null
           };
 
+          let referrerId: string | null = null;
           try {
             // Use a single transaction to ensure everything is atomic
             await runTransaction(db, async (transaction) => {
@@ -452,7 +446,6 @@ export const AuthPage: React.FC = () => {
               }
 
               // 2. Check referral code if provided
-              let referrerId = null;
               let referrerUsername = 'Unknown';
               if (referralCode) {
                 const referralCodeRef = doc(db, 'referral_codes', referralCode.toUpperCase());
@@ -460,7 +453,7 @@ export const AuthPage: React.FC = () => {
                 
                 if (referralCodeDoc.exists()) {
                   referrerId = referralCodeDoc.data().uid;
-                  const referrerProfileRef = doc(db, 'public_profiles', referrerId);
+                  const referrerProfileRef = doc(db, 'public_profiles', referrerId!);
                   const referrerProfileDoc = await transaction.get(referrerProfileRef);
                   
                   if (referrerProfileDoc.exists()) {
@@ -468,16 +461,21 @@ export const AuthPage: React.FC = () => {
                     if (referrerData.referral_count < 10) {
                       referrerUsername = referrerData.username || 'Unknown';
                       
-                      // Increment referrer's count in public profile
-                      transaction.update(referrerProfileRef, {
-                        referral_count: increment(1)
-                      });
-                      
-                      // Also update users collection for admin view if needed
-                      const referrerUserRef = doc(db, 'users', referrerId);
-                      transaction.update(referrerUserRef, {
-                        referral_count: increment(1)
-                      });
+                      // Only grant referral bonus if this is NOT a multi-account
+                      if (!isMultiAccount) {
+                        // Increment referrer's count in public profile
+                        transaction.update(referrerProfileRef, {
+                          referral_count: increment(1)
+                        });
+                        
+                        // Also update users collection for admin view if needed
+                        const referrerUserRef = doc(db, 'users', referrerId!);
+                        transaction.update(referrerUserRef, {
+                          referral_count: increment(1)
+                        });
+                      } else {
+                        referrerId = null; // Don't grant bonus for multi-account
+                      }
                     } else {
                       referrerId = null; // Max referrals reached
                     }
@@ -487,21 +485,26 @@ export const AuthPage: React.FC = () => {
                 }
               }
               
-              // 3. Prepare user data
-              const userData = {
-                username: sanitizedUsername,
-                password,
+          // 3. Prepare user data
+          const userData = {
+            full_name: fullName,
+            username: sanitizedUsername,
+            email: realEmail,
+            password,
                 role: 'user',
                 status: isMultiAccount ? 'blocked' : 'active',
                 block_reason: isMultiAccount ? 'multi_account' : null,
                 is_paid: false,
                 device_id: deviceId,
+                createdAt: serverTimestamp(),
                 created_at: serverTimestamp(),
                 trial_ends_at: referrerId 
                   ? new Date(new Date().setDate(new Date().getDate() + 6)).toISOString()
                   : trialEnds.toISOString(),
+                referralCode: myReferralCode,
                 referral_code: myReferralCode,
                 referral_count: 0,
+                referredBy: referralCode, // Saving the code as requested
                 referred_by: referrerId
               };
 
@@ -539,6 +542,9 @@ export const AuthPage: React.FC = () => {
             console.log("AuthPage: Registration and referral completed successfully");
             localStorage.setItem('has_registered', 'true');
             localStorage.removeItem('pending_referral_code');
+            if (referrerId) {
+              localStorage.setItem('referral_used_device', 'true');
+            }
             setIsLogin(true);
             setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
           } catch (fsErr: any) {
@@ -763,9 +769,39 @@ export const AuthPage: React.FC = () => {
         </AnimatePresence>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!isLogin && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                  আপনার নাম (Full Name)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="আপনার পুরো নাম লিখুন"
+                  className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                  ইমেইল (Email)
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={realEmail}
+                  onChange={(e) => setRealEmail(e.target.value)}
+                  placeholder="আপনার ইমেইল ঠিকানা লিখুন"
+                  className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
+                />
+              </div>
+            </>
+          )}
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              {t('username')}
+              {isLogin ? 'ইউজারনেম বা ইমেইল' : 'ইউজারনেম (Username)'}
             </label>
             <input
               type="text"
