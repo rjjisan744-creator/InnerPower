@@ -43,12 +43,18 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
 
       const q = query(
         collection(db, "support_messages"),
-        where("user_id", "==", userId),
-        orderBy("created_at", "asc")
+        where("user_id", "==", userId)
       );
       
       const unsub = onSnapshot(q, (snap) => {
-        setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const fetchedMessages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Sort client-side to avoid needing a composite index
+        fetchedMessages.sort((a: any, b: any) => {
+          const timeA = a.created_at?.toMillis ? a.created_at.toMillis() : Date.now();
+          const timeB = b.created_at?.toMillis ? b.created_at.toMillis() : Date.now();
+          return timeA - timeB;
+        });
+        setMessages(fetchedMessages);
         
         // Mark admin messages as read
         const batch = writeBatch(db);
@@ -61,13 +67,18 @@ export const SupportContactModal: React.FC<SupportContactModalProps> = ({ isOpen
         });
         if (hasChanges) {
           batch.commit().catch(err => {
-            if (err.code !== 'resource-exhausted') {
+            if (err.code !== 'resource-exhausted' && err.code !== 'permission-denied') {
               console.error("SupportContactModal: Batch commit error:", err);
             }
           });
         }
       }, (err) => {
         console.error("SupportContactModal: Messages listener error:", err);
+        if (err.code === 'permission-denied') {
+          setError('মেসেজ লোড করার অনুমতি নেই।');
+        } else {
+          setError('মেসেজ লোড করা যায়নি।');
+        }
       });
 
       return () => unsub();

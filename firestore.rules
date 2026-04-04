@@ -126,12 +126,11 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         resource.data.user_id == request.auth.uid || 
         isAdmin() ||
-        // Allow reading if the ID matches the device ID pattern for guests
         (resource.data.user_id is string && resource.data.user_id.matches("^web-.*"))
       );
       allow create: if isAuthenticated() || 
                        (request.resource.data.user_id is string && request.resource.data.user_id.matches("^web-.*"));
-      allow update: if isAdmin();
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.user_id == request.auth.uid);
       allow delete: if isAdmin();
     }
 

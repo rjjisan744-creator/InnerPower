@@ -376,25 +376,33 @@ export const AdminPanelPage: React.FC = () => {
 
   useEffect(() => {
     if (selectedChatUser) {
-      const q = query(collection(db, "support_messages"), where("user_id", "==", selectedChatUser.user_id), orderBy("created_at", "asc"));
+      const q = query(collection(db, "support_messages"), where("user_id", "==", selectedChatUser.user_id));
       const unsub = onSnapshot(q, (snap) => {
-        setChatMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      // Mark as read
-      const batch = writeBatch(db);
-      let hasChanges = false;
-      snap.docs.forEach(d => {
-        if (d.data().status === 'unread' && d.data().sender_role === 'user') {
-          batch.update(d.ref, { status: 'read' });
-          hasChanges = true;
-        }
-      });
-      if (hasChanges) {
-        batch.commit().catch(err => {
-          if (err.code !== 'resource-exhausted') {
-            console.error("AdminPanel: Batch commit error:", err);
+        const fetchedMessages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Sort client-side
+        fetchedMessages.sort((a: any, b: any) => {
+          const timeA = a.created_at?.toMillis ? a.created_at.toMillis() : Date.now();
+          const timeB = b.created_at?.toMillis ? b.created_at.toMillis() : Date.now();
+          return timeA - timeB;
+        });
+        setChatMessages(fetchedMessages);
+        
+        // Mark as read
+        const batch = writeBatch(db);
+        let hasChanges = false;
+        snap.docs.forEach(d => {
+          if (d.data().status === 'unread' && d.data().sender_role === 'user') {
+            batch.update(d.ref, { status: 'read' });
+            hasChanges = true;
           }
         });
-      }
+        if (hasChanges) {
+          batch.commit().catch(err => {
+            if (err.code !== 'resource-exhausted') {
+              console.error("AdminPanel: Batch commit error:", err);
+            }
+          });
+        }
       });
       return () => unsub();
     }
