@@ -3,9 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from './AppContext';
 import { CATEGORIES } from './constants';
 import { User, Book, Category, Note } from './types';
-import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle, FileUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
+import * as pdfjsLib from 'pdfjs-dist';
+// @ts-ignore
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { GoogleGenAI, Type } from "@google/genai";
+
+// Set up PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 import { AUTHORIZED_ADMIN_EMAILS } from './App';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
 
@@ -44,6 +51,8 @@ export const AdminPanelPage: React.FC = () => {
   const { t } = useApp();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
   // Settings State
   const [homeText, setHomeText] = useState('');
@@ -656,6 +665,127 @@ export const AdminPanelPage: React.FC = () => {
         setCoverUrl(base64String);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingPdf(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      // 1. Extract Cover Image from first page
+      const firstPage = await pdf.getPage(1);
+      const viewport = firstPage.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      if (context) {
+        await firstPage.render({ canvasContext: context, viewport, canvas: canvas }).promise;
+        const coverBase64 = canvas.toDataURL('image/jpeg', 0.8);
+        setCoverUrl(coverBase64);
+        setImagePreview(coverBase64);
+      }
+
+      // 2. Use Gemini to extract metadata and high-quality text
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const model = "gemini-3-flash-preview";
+      
+      const extractedPages: string[] = [];
+      let detectedTitle = '';
+      let detectedAuthor = '';
+      let detectedDescription = '';
+
+      // Process first few pages for metadata and text
+      // We'll process up to 10 pages with Gemini for high accuracy, 
+      // then fallback to pdf.js text extraction for the rest if it's a long book
+      // but for Bengali, we really want Gemini for all pages if possible.
+      // Let's try to process as many as we can (limit to 30 for performance)
+      const maxGeminiPages = Math.min(pdf.numPages, 30);
+      
+      showToast(`বইটি প্রসেস করা হচ্ছে (মোট ${pdf.numPages} পৃষ্ঠা)...`);
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        
+        if (i <= maxGeminiPages) {
+          // Use Gemini for high accuracy Bengali extraction
+          const pageViewport = page.getViewport({ scale: 2.0 });
+          const pageCanvas = document.createElement('canvas');
+          const pageContext = pageCanvas.getContext('2d');
+          pageCanvas.height = pageViewport.height;
+          pageCanvas.width = pageViewport.width;
+          
+          if (pageContext) {
+            await page.render({ canvasContext: pageContext, viewport: pageViewport, canvas: pageCanvas }).promise;
+            const pageBase64 = pageCanvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+
+            const prompt = i === 1 
+              ? "Extract the text from this Bengali book page accurately. Also, identify the 'Book Title', 'Author Name', and a 'Short Description' if present. Return the result in JSON format with keys: title, author, description, content."
+              : "Extract the text from this Bengali book page accurately. Return the result in JSON format with key: content.";
+
+            const result = await ai.models.generateContent({
+              model,
+              contents: [{
+                parts: [
+                  { inlineData: { data: pageBase64, mimeType: "image/jpeg" } },
+                  { text: prompt }
+                ]
+              }],
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: i === 1 ? {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    author: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    content: { type: Type.STRING }
+                  }
+                } : {
+                  type: Type.OBJECT,
+                  properties: {
+                    content: { type: Type.STRING }
+                  }
+                }
+              }
+            });
+
+            const data = JSON.parse(result.text || '{}');
+            if (i === 1) {
+              if (data.title) setTitle(data.title);
+              if (data.author) setAuthor(data.author);
+              if (data.description) setDescription(data.description);
+            }
+            extractedPages.push(data.content || '');
+          }
+        } else {
+          // Fallback to pdf.js for remaining pages to save tokens/time
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(' ');
+          extractedPages.push(pageText.trim());
+        }
+      }
+
+      if (extractedPages.length > 0) {
+        setPages(extractedPages);
+        showToast(`বইটি সফলভাবে যোগ করা হয়েছে!`);
+      } else {
+        showToast('PDF থেকে কোন লেখা পাওয়া যায়নি।', 'error');
+      }
+    } catch (error) {
+      console.error('Error processing PDF:', error);
+      showToast('PDF প্রসেস করতে সমস্যা হয়েছে। বানান বা তথ্য ঠিক করতে জেমিনি ব্যবহার করা হয়েছে কিন্তু ব্যর্থ হয়েছে।', 'error');
+    } finally {
+      setIsProcessingPdf(false);
+      if (pdfInputRef.current) pdfInputRef.current.value = '';
     }
   };
 
@@ -2829,6 +2959,26 @@ export const AdminPanelPage: React.FC = () => {
                                 <FileText size={12} />
                                 একবারে সব যোগ করুন
                               </button>
+                              <button 
+                                type="button"
+                                onClick={() => pdfInputRef.current?.click()}
+                                disabled={isProcessingPdf}
+                                className="text-[10px] font-black uppercase tracking-widest text-purple-600 flex items-center gap-1 hover:underline disabled:opacity-50"
+                              >
+                                {isProcessingPdf ? (
+                                  <div className="w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                  <FileUp size={12} />
+                                )}
+                                PDF থেকে যোগ করুন
+                              </button>
+                              <input 
+                                type="file" 
+                                ref={pdfInputRef} 
+                                onChange={handlePdfChange} 
+                                accept=".pdf" 
+                                className="hidden" 
+                              />
                               <button 
                                 type="button"
                                 onClick={() => setPages([...pages, ''])}

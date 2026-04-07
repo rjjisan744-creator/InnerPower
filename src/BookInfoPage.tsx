@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Book } from './types';
-import { ArrowLeft, BookOpen, User, Heart } from 'lucide-react';
+import { ArrowLeft, BookOpen, User, Heart, File } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useApp } from './AppContext';
 
@@ -153,6 +153,20 @@ export const BookInfoPage: React.FC = () => {
                   <Heart size={20} fill={inWishlist ? "currentColor" : "none"} />
                 </button>
               </div>
+
+              {book.pdf_url && (
+                <div className="pt-4">
+                  <a 
+                    href={book.pdf_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-100 dark:border-red-900/30 hover:bg-red-100 transition-colors"
+                  >
+                    <File size={14} />
+                    অরিজিনাল PDF দেখুন
+                  </a>
+                </div>
+              )}
             </div>
           </div>
 
