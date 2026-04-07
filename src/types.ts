@@ -31,6 +31,7 @@ export interface User {
   created_at?: string;
   fullName?: string;
   email?: string;
+  phoneNumber?: string;
   profilePicture?: string;
   profile_picture?: string;
   booksReadCount?: number;

@@ -66,8 +66,7 @@ export const AuthPage: React.FC = () => {
     return localStorage.getItem('has_registered') === 'true';
   });
   const [username, setUsername] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [realEmail, setRealEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [error, setError] = useState('');
@@ -249,18 +248,18 @@ export const AuthPage: React.FC = () => {
     e.preventDefault();
     setError('');
 
-    if (!isLogin && (!username || !password || !fullName || !realEmail)) {
+    if (!isLogin && (!username || !password || !phoneNumber)) {
       setError("সব ঘর পূরণ করুন");
       return;
     }
 
-    if (isLogin && (!username || !password)) {
+    if (isLogin && (!phoneNumber || !password)) {
       setError("সব ঘর পূরণ করুন");
       return;
     }
 
-    if (!isLogin && !realEmail.includes('@')) {
-      setError("সঠিক ইমেইল ঠিকানা দিন");
+    if (!isLogin && phoneNumber.length < 10) {
+      setError("সঠিক নাম্বার দিন");
       return;
     }
 
@@ -306,9 +305,7 @@ export const AuthPage: React.FC = () => {
       }
     }
 
-    const email = isLogin 
-      ? (username.includes('@') ? username : `${sanitizedUsername}@innerpower.app`)
-      : realEmail;
+    const email = `${phoneNumber}@innerpower.app`;
 
     try {
       setIsLoading(true);
@@ -368,6 +365,7 @@ export const AuthPage: React.FC = () => {
             trialEndsAt: userData.trial_ends_at,
             fullName: userData.full_name,
             email: userData.email,
+            phoneNumber: userData.phone_number,
             profilePicture: userData.profile_picture,
             referralCode: userData.referral_code,
             referralCount: userData.referral_count,
@@ -487,9 +485,10 @@ export const AuthPage: React.FC = () => {
               
           // 3. Prepare user data
           const userData = {
-            full_name: fullName,
+            full_name: username,
             username: sanitizedUsername,
-            email: realEmail,
+            email: email,
+            phone_number: phoneNumber,
             password,
                 role: 'user',
                 status: isMultiAccount ? 'blocked' : 'active',
@@ -540,13 +539,16 @@ export const AuthPage: React.FC = () => {
             });
 
             console.log("AuthPage: Registration and referral completed successfully");
-            localStorage.setItem('has_registered', 'true');
-            localStorage.removeItem('pending_referral_code');
-            if (referrerId) {
-              localStorage.setItem('referral_used_device', 'true');
-            }
-            setIsLogin(true);
-            setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
+          localStorage.setItem('has_registered', 'true');
+          localStorage.removeItem('pending_referral_code');
+          if (referrerId) {
+            localStorage.setItem('referral_used_device', 'true');
+          }
+          setIsLogin(true);
+          setPhoneNumber(phoneNumber); // Keep phone number for login
+          setUsername('');
+          setPassword('');
+          setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
           } catch (fsErr: any) {
             if (fsErr.code === 'resource-exhausted') {
               setError("দুঃখিত, আমাদের সার্ভারের দৈনিক লিমিট শেষ হয়ে গেছে। দয়া করে আগামীকাল আবার চেষ্টা করুন।");
@@ -770,102 +772,63 @@ export const AuthPage: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  আপনার নাম (Full Name)
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="আপনার পুরো নাম লিখুন"
-                  className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  ইমেইল (Email)
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={realEmail}
-                  onChange={(e) => setRealEmail(e.target.value)}
-                  placeholder="আপনার ইমেইল ঠিকানা লিখুন"
-                  className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
-                />
-              </div>
-            </>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              {isLogin ? 'ইউজারনেম বা ইমেইল' : 'ইউজারনেম (Username)'}
-            </label>
-            <input
-              type="text"
-              required
-              value={username}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\s+/g, '');
-                setUsername(val);
-                setError('');
-                // Reset availability status immediately while typing for a 'live' feel
-                if (!isLogin) {
-                  setIsUsernameAvailable(null);
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                ইউজারনেম (Username)
+              </label>
+              <input
+                type="text"
+                required
+                value={username}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\s+/g, '');
+                  setUsername(val);
+                  setError('');
                   if (val.length >= 3) {
                     setIsCheckingUsername(true);
                   } else {
                     setIsCheckingUsername(false);
                   }
-                }
-              }}
-              className={`w-full px-4 py-2 rounded-xl border ${
-                !isLogin && isUsernameAvailable === false 
-                  ? 'border-red-500 ring-1 ring-red-500' 
-                  : !isLogin && isUsernameAvailable === true 
-                  ? 'border-emerald-500 ring-1 ring-emerald-500' 
-                  : 'border-zinc-200 dark:border-zinc-800'
-              } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
-            />
-            {!isLogin && username.length >= 3 && (
-              <div className="mt-1">
-                {isCheckingUsername ? (
-                  <p className="text-[10px] text-zinc-500 animate-pulse">ইউজারনেম চেক করা হচ্ছে...</p>
-                ) : isUsernameAvailable === false ? (
-                  <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20 space-y-3">
-                    <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
-                      <X size={14} className="shrink-0" />
-                      <p className="text-[11px] font-black uppercase tracking-tight">এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
-                    </div>
-                    
-                    {usernameSuggestions.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400">নিচের নামগুলো চেষ্টা করতে পারেন:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {usernameSuggestions.map((suggestion) => (
-                            <button
-                              key={suggestion}
-                              type="button"
-                              onClick={() => {
-                                setUsername(suggestion);
-                                setError('');
-                              }}
-                              className="text-[10px] font-black bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all shadow-sm active:scale-95"
-                            >
-                              {suggestion}
-                            </button>
-                          ))}
-                        </div>
+                }}
+                className={`w-full px-4 py-2 rounded-xl border ${
+                  isUsernameAvailable === false 
+                    ? 'border-red-500 ring-1 ring-red-500' 
+                    : isUsernameAvailable === true 
+                    ? 'border-emerald-500 ring-1 ring-emerald-500' 
+                    : 'border-zinc-200 dark:border-zinc-800'
+                } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
+              />
+              {username.length >= 3 && (
+                <div className="mt-1">
+                  {isCheckingUsername ? (
+                    <p className="text-[10px] text-zinc-500 animate-pulse">ইউজারনেম চেক করা হচ্ছে...</p>
+                  ) : isUsernameAvailable === false ? (
+                    <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20 space-y-3">
+                      <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                        <X size={14} className="shrink-0" />
+                        <p className="text-[11px] font-black uppercase tracking-tight">এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
                       </div>
-                    )}
-                  </div>
-                ) : isUsernameAvailable === true ? (
-                  <p className="text-[10px] text-emerald-500 font-bold">এই ইউজারনেমটি এভেইলেবল আছে!</p>
-                ) : null}
-              </div>
-            )}
+                    </div>
+                  ) : isUsernameAvailable === true ? (
+                    <p className="text-[10px] text-emerald-500 font-bold">এই ইউজারনেমটি এভেইলেবল আছে!</p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              ফোন নাম্বার (Phone Number)
+            </label>
+            <input
+              type="tel"
+              required
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="আপনার ফোন নাম্বার লিখুন"
+              className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">

@@ -693,22 +693,21 @@ export const AdminPanelPage: React.FC = () => {
       }
 
       // 2. Use Gemini to extract metadata and high-quality text
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      const model = "gemini-3-flash-preview";
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("GEMINI_API_KEY is not set in the environment.");
+      }
+      
+      const client = new GoogleGenAI({ apiKey });
+      const model = "gemini-2.0-flash";
       
       const extractedPages: string[] = [];
-      let detectedTitle = '';
-      let detectedAuthor = '';
-      let detectedDescription = '';
-
-      // Process first few pages for metadata and text
-      // We'll process up to 10 pages with Gemini for high accuracy, 
-      // then fallback to pdf.js text extraction for the rest if it's a long book
-      // but for Bengali, we really want Gemini for all pages if possible.
-      // Let's try to process as many as we can (limit to 30 for performance)
-      const maxGeminiPages = Math.min(pdf.numPages, 30);
       
       showToast(`বইটি প্রসেস করা হচ্ছে (মোট ${pdf.numPages} পৃষ্ঠা)...`);
+
+      // Process pages
+      // We'll process up to 30 pages with Gemini for high accuracy
+      const maxGeminiPages = Math.min(pdf.numPages, 30);
 
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -726,10 +725,10 @@ export const AdminPanelPage: React.FC = () => {
             const pageBase64 = pageCanvas.toDataURL('image/jpeg', 0.6).split(',')[1];
 
             const prompt = i === 1 
-              ? "Extract the text from this Bengali book page accurately. Also, identify the 'Book Title', 'Author Name', and a 'Short Description' if present. Return the result in JSON format with keys: title, author, description, content."
-              : "Extract the text from this Bengali book page accurately. Return the result in JSON format with key: content.";
+              ? "Extract the text from this Bengali book page accurately. Pay special attention to Bengali vowel signs (like আ-কার, ও-কার, ই-কার, এ-কার) and ensure they are correctly attached to consonants. Also, identify the 'Book Title', 'Author Name', and a 'Short Description' if present. Return the result in JSON format with keys: title, author, description, content."
+              : "Extract the text from this Bengali book page accurately. Pay special attention to Bengali vowel signs (like আ-কার, ও-কার, ই-কার, এ-কার) and ensure they are correctly attached to consonants. Return the result in JSON format with key: content.";
 
-            const result = await ai.models.generateContent({
+            const result = await client.models.generateContent({
               model,
               contents: [{
                 parts: [
@@ -739,50 +738,50 @@ export const AdminPanelPage: React.FC = () => {
               }],
               config: {
                 responseMimeType: "application/json",
-                responseSchema: i === 1 ? {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: { type: Type.STRING },
-                    author: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    content: { type: Type.STRING }
-                  }
-                } : {
-                  type: Type.OBJECT,
-                  properties: {
-                    content: { type: Type.STRING }
-                  }
-                }
               }
             });
 
-            const data = JSON.parse(result.text || '{}');
+            const responseText = result.text;
+            const data = JSON.parse(responseText || '{}');
+            
             if (i === 1) {
               if (data.title) setTitle(data.title);
               if (data.author) setAuthor(data.author);
               if (data.description) setDescription(data.description);
             }
-            extractedPages.push(data.content || '');
+            
+            if (data.content) {
+              extractedPages.push(data.content);
+            } else {
+              // Fallback if content is missing in JSON
+              const textContent = await page.getTextContent();
+              extractedPages.push(textContent.items.map((item: any) => item.str).join(' '));
+            }
           }
         } else {
-          // Fallback to pdf.js for remaining pages to save tokens/time
+          // Fallback to pdf.js for remaining pages
           const textContent = await page.getTextContent();
           const pageText = textContent.items
             .map((item: any) => item.str)
             .join(' ');
           extractedPages.push(pageText.trim());
         }
+        
+        // Update progress toast every 5 pages
+        if (i % 5 === 0) {
+          showToast(`প্রসেসিং চলছে: ${i}/${pdf.numPages} পৃষ্ঠা সম্পন্ন...`);
+        }
       }
 
       if (extractedPages.length > 0) {
         setPages(extractedPages);
-        showToast(`বইটি সফলভাবে যোগ করা হয়েছে!`);
+        showToast(`বইটি সফলভাবে প্রসেস করা হয়েছে!`);
       } else {
         showToast('PDF থেকে কোন লেখা পাওয়া যায়নি।', 'error');
       }
     } catch (error) {
       console.error('Error processing PDF:', error);
-      showToast('PDF প্রসেস করতে সমস্যা হয়েছে। বানান বা তথ্য ঠিক করতে জেমিনি ব্যবহার করা হয়েছে কিন্তু ব্যর্থ হয়েছে।', 'error');
+      showToast('PDF প্রসেস করতে সমস্যা হয়েছে। অনুগ্রহ করে ইন্টারনেট কানেকশন চেক করুন।', 'error');
     } finally {
       setIsProcessingPdf(false);
       if (pdfInputRef.current) pdfInputRef.current.value = '';
@@ -1570,7 +1569,7 @@ export const AdminPanelPage: React.FC = () => {
                                   {user.username}
                                 </div>
                                 <div className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700"></div>
-                                <div className="text-[11px] text-zinc-500 font-bold">{user.email || "No email set"}</div>
+                                <div className="text-[11px] text-zinc-500 font-bold">{user.phoneNumber || user.email || "No contact set"}</div>
                               </div>
                               {user.last_active_at && (
                                 <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">

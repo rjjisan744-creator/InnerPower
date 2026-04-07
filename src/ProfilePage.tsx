@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   User as UserIcon, 
-  Mail, 
+  Phone, 
   BookOpen, 
   History, 
   Heart, 
@@ -67,7 +67,7 @@ export const ProfilePage: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ fullName: '', email: '' });
+  const [editForm, setEditForm] = useState({ fullName: '', phoneNumber: '' });
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [referralHistory, setReferralHistory] = useState<any[]>([]);
@@ -110,7 +110,7 @@ export const ProfilePage: React.FC = () => {
     setUser(parsedUser);
     setEditForm({
       fullName: parsedUser.fullName || '',
-      email: parsedUser.email || ''
+      phoneNumber: parsedUser.phoneNumber || ''
     });
 
     const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
@@ -136,6 +136,7 @@ export const ProfilePage: React.FC = () => {
             ...userData,
             id: docSnap.id,
             fullName: userData.full_name || parsedUser.fullName,
+            phoneNumber: userData.phone_number || parsedUser.phoneNumber,
             profilePicture: userData.profile_picture || parsedUser.profilePicture,
             referralCode: userData.referral_code || parsedUser.referralCode,
             referralCount: userData.referral_count || 0,
@@ -343,11 +344,11 @@ export const ProfilePage: React.FC = () => {
     try {
       await updateDoc(doc(db, "users", user.id), { 
         full_name: editForm.fullName,
-        email: editForm.email
+        phone_number: editForm.phoneNumber
       });
       saveToLocalStorage({ 
         fullName: editForm.fullName,
-        email: editForm.email
+        phoneNumber: editForm.phoneNumber
       });
       setIsEditing(false);
       showToast('Profile updated successfully!');
@@ -458,7 +459,7 @@ export const ProfilePage: React.FC = () => {
 
   const profileData = {
     fullName: user.fullName || user.username,
-    email: user.email || "No email set",
+    phoneNumber: user.phoneNumber || "No number set",
     profilePicture: user.profilePicture || user.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
     booksReadCount: user.booksReadCount || 0,
     currentlyReading: user.currentlyReading || "None",
@@ -581,8 +582,8 @@ export const ProfilePage: React.FC = () => {
 
           <h2 className="text-2xl font-black tracking-tight mb-1">{profileData.fullName}</h2>
           <div className="flex items-center justify-center gap-2 text-zinc-500 dark:text-zinc-400 font-medium">
-            <Mail size={14} />
-            <span className="text-sm">{profileData.email}</span>
+            <Phone size={14} />
+            <span className="text-sm">{profileData.phoneNumber}</span>
           </div>
         </section>
 
@@ -625,13 +626,13 @@ export const ProfilePage: React.FC = () => {
                     <p className="mt-2 text-[9px] font-medium text-zinc-400 italic">* এটি শুধুমাত্র আপনার প্রোফাইলে দেখানোর জন্য ব্যবহার করা হবে।</p>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-zinc-400 mb-2 uppercase tracking-[0.2em]">Email Address</label>
+                    <label className="block text-[10px] font-black text-zinc-400 mb-2 uppercase tracking-[0.2em]">Phone Number</label>
                     <input 
-                      type="email"
-                      value={editForm.email}
-                      onChange={(e) => setEditForm({...editForm, email: e.target.value})}
+                      type="tel"
+                      value={editForm.phoneNumber}
+                      onChange={(e) => setEditForm({...editForm, phoneNumber: e.target.value})}
                       className="w-full p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-2 border-transparent focus:border-emerald-500/50 outline-none transition-all font-bold"
-                      placeholder="Enter your email"
+                      placeholder="Enter your phone number"
                       required
                     />
                   </div>
