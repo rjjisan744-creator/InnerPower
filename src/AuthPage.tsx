@@ -808,6 +808,27 @@ export const AuthPage: React.FC = () => {
                         <X size={14} className="shrink-0" />
                         <p className="text-[11px] font-black uppercase tracking-tight">এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
                       </div>
+                      
+                      {usernameSuggestions.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400">নিচের নামগুলো চেষ্টা করতে পারেন:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {usernameSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onClick={() => {
+                                  setUsername(suggestion);
+                                  setError('');
+                                }}
+                                className="text-[10px] font-black bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all shadow-sm active:scale-95"
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : isUsernameAvailable === true ? (
                     <p className="text-[10px] text-emerald-500 font-bold">এই ইউজারনেমটি এভেইলেবল আছে!</p>
