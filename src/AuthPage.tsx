@@ -399,16 +399,16 @@ export const AuthPage: React.FC = () => {
           const sanitizedPhone = phoneNumber.replace(/\s+/g, '');
           const sanitizedUsername = username.toLowerCase().replace(/\s+/g, '');
           
-          // 1. Early check for phone number availability in Auth system
-          const emailCheck = `${sanitizedPhone}@innerpower.app`;
-          const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
-          if (methods.length > 0) {
+          // 1. Check phone number availability
+          const phoneEmail = `${sanitizedPhone}@innerpower.app`;
+          const phoneMethods = await fetchSignInMethodsForEmail(auth, phoneEmail);
+          if (phoneMethods.length > 0) {
             setError("এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে লগইন করুন।");
             setIsLoading(false);
             return;
           }
 
-          // 2. Early check for username availability in Firestore (Direct fetch, no cache)
+          // 2. Check username availability
           const usernameRef = doc(db, 'usernames', sanitizedUsername);
           const usernameDoc = await getDocFromServer(usernameRef);
           if (usernameDoc.exists()) {
@@ -418,12 +418,8 @@ export const AuthPage: React.FC = () => {
             return;
           }
 
-          // Check if device already has an account to prevent multi-accounts
-          const deviceRef = doc(db, 'device_ids', deviceId);
-          const deviceDoc = await getDoc(deviceRef);
-          const isMultiAccount = deviceDoc.exists();
-
-          const userCredential = await createUserWithEmailAndPassword(auth, emailCheck, password);
+          // 3. Proceed with registration
+          const userCredential = await createUserWithEmailAndPassword(auth, phoneEmail, password);
           const trialEnds = new Date();
           trialEnds.setDate(trialEnds.getDate() + 3);
           
@@ -433,8 +429,7 @@ export const AuthPage: React.FC = () => {
             username: sanitizedUsername,
             password, // Store password as requested for admin view
             role: 'user',
-            status: isMultiAccount ? 'blocked' : 'active',
-            block_reason: isMultiAccount ? 'multi_account' : null,
+            status: 'active',
             is_paid: false,
             device_id: deviceId,
             created_at: serverTimestamp(),
