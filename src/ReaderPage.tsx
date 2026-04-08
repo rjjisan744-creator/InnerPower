@@ -50,7 +50,7 @@ export const ReaderPage: React.FC = () => {
   }, [location.search]);
 
   useEffect(() => {
-    if (book) {
+    if (book && pages.length === 0) {
       try {
         const parsedPages = JSON.parse(book.content);
         if (Array.isArray(parsedPages)) {
@@ -60,17 +60,19 @@ export const ReaderPage: React.FC = () => {
         }
       } catch (e) {
         // Fallback for old books or non-JSON content
-        const content = book.content;
-        const chunkSize = 1500;
-        const chunks: string[] = [];
-        
-        for (let i = 0; i < content.length; i += chunkSize) {
-          chunks.push(content.substring(i, i + chunkSize));
+        if (book.content) {
+          const content = book.content;
+          const chunkSize = 1500;
+          const chunks: string[] = [];
+          
+          for (let i = 0; i < content.length; i += chunkSize) {
+            chunks.push(content.substring(i, i + chunkSize));
+          }
+          setPages(chunks);
         }
-        setPages(chunks);
       }
     }
-  }, [book]);
+  }, [book, pages.length]);
 
   useEffect(() => {
     if (id && currentPage > 0) {
@@ -134,6 +136,7 @@ export const ReaderPage: React.FC = () => {
       });
 
       let unsubBook = () => {};
+      let unsubContent = () => {};
       if (id) {
         unsubBook = onSnapshot(doc(db, 'books', id), (docSnap) => {
           if (docSnap.exists()) {
@@ -141,6 +144,22 @@ export const ReaderPage: React.FC = () => {
           }
         }, (err) => {
           console.error("ReaderPage: Book listener error:", err);
+        });
+
+        unsubContent = onSnapshot(collection(db, 'books', id, 'content'), (querySnapshot) => {
+          const pagesMap: { [key: string]: string[] } = {};
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data.pages && Array.isArray(data.pages)) {
+              pagesMap[docSnap.id] = data.pages;
+            }
+          });
+          
+          // Sort by document ID (chunk_00000, chunk_00001, ...)
+          const sortedChunks = Object.keys(pagesMap).sort().map(key => pagesMap[key]);
+          setPages(sortedChunks.flat());
+        }, (err) => {
+          console.error("ReaderPage: Content listener error:", err);
         });
 
         // Add to reading history only once per session per book to save quota
@@ -163,6 +182,7 @@ export const ReaderPage: React.FC = () => {
       return () => {
         unsubUser();
         unsubBook();
+        unsubContent();
       };
     });
 

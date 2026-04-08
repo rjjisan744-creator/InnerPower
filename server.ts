@@ -46,7 +46,8 @@ console.log(`Firestore initialized using ${dbApp.name === "db-app" ? "auto-detec
 console.log(`Targeting database: ${databaseId}`);
 
 const server = express();
-server.use(express.json());
+server.use(express.json({ limit: '50mb' }));
+server.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const PORT = 3000;
 

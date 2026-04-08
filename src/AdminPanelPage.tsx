@@ -692,90 +692,41 @@ export const AdminPanelPage: React.FC = () => {
         setImagePreview(coverBase64);
       }
 
-      // 2. Use Gemini to extract metadata and high-quality text
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("GEMINI_API_KEY is not set in the environment.");
-      }
-      
-      const client = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
-      
+      // 2. Use PDF.js to extract text strictly page-by-page locally
       const extractedPages: string[] = [];
-      
       showToast(`বইটি প্রসেস করা হচ্ছে (মোট ${pdf.numPages} পৃষ্ঠা)...`);
 
-      // Process pages
-      // We'll process up to 30 pages with Gemini for high accuracy
-      const maxGeminiPages = Math.min(pdf.numPages, 30);
-
+      // Process pages locally
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         
-        if (i <= maxGeminiPages) {
-          // Use Gemini for high accuracy Bengali extraction
-          const pageViewport = page.getViewport({ scale: 2.0 });
-          const pageCanvas = document.createElement('canvas');
-          const pageContext = pageCanvas.getContext('2d');
-          pageCanvas.height = pageViewport.height;
-          pageCanvas.width = pageViewport.width;
+        // Get text content for the current page
+        const textContent = await page.getTextContent();
+        
+        // Combine text items for this page only
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(' ');
           
-          if (pageContext) {
-            await page.render({ canvasContext: pageContext, viewport: pageViewport, canvas: pageCanvas }).promise;
-            const pageBase64 = pageCanvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-
-            const prompt = i === 1 
-              ? "Extract the text from this Bengali book page accurately. Pay special attention to Bengali vowel signs (like আ-কার, ও-কার, ই-কার, এ-কার) and ensure they are correctly attached to consonants. Also, identify the 'Book Title', 'Author Name', and a 'Short Description' if present. Return the result in JSON format with keys: title, author, description, content."
-              : "Extract the text from this Bengali book page accurately. Pay special attention to Bengali vowel signs (like আ-কার, ও-কার, ই-কার, এ-কার) and ensure they are correctly attached to consonants. Return the result in JSON format with key: content.";
-
-            const result = await client.models.generateContent({
-              model,
-              contents: [{
-                parts: [
-                  { inlineData: { data: pageBase64, mimeType: "image/jpeg" } },
-                  { text: prompt }
-                ]
-              }],
-              config: {
-                responseMimeType: "application/json",
-              }
-            });
-
-            const responseText = result.text;
-            const data = JSON.parse(responseText || '{}');
-            
-            if (i === 1) {
-              if (data.title) setTitle(data.title);
-              if (data.author) setAuthor(data.author);
-              if (data.description) setDescription(data.description);
-            }
-            
-            if (data.content) {
-              extractedPages.push(data.content);
-            } else {
-              // Fallback if content is missing in JSON
-              const textContent = await page.getTextContent();
-              extractedPages.push(textContent.items.map((item: any) => item.str).join(' '));
-            }
-          }
-        } else {
-          // Fallback to pdf.js for remaining pages
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join(' ');
-          extractedPages.push(pageText.trim());
-        }
+        // Store as a distinct page, even if empty
+        extractedPages.push(pageText.trim());
+        
+        console.log(`Page ${i} processed, length: ${pageText.trim().length}`);
         
         // Update progress toast every 5 pages
         if (i % 5 === 0) {
           showToast(`প্রসেসিং চলছে: ${i}/${pdf.numPages} পৃষ্ঠা সম্পন্ন...`);
         }
       }
+      
+      // Set metadata from first page text if needed (basic fallback)
+      if (extractedPages.length > 0) {
+        setDescription(extractedPages[0].substring(0, 200) + "...");
+      }
 
       if (extractedPages.length > 0) {
         setPages(extractedPages);
-        showToast(`বইটি সফলভাবে প্রসেস করা হয়েছে!`);
+        showToast(`বইটি সফলভাবে প্রসেস করা হয়েছে! মোট পৃষ্ঠা: ${extractedPages.length}`);
       } else {
         showToast('PDF থেকে কোন লেখা পাওয়া যায়নি।', 'error');
       }
@@ -991,7 +942,6 @@ export const AdminPanelPage: React.FC = () => {
       cover_url: coverUrl,
       pdf_url: pdfUrl,
       category: finalCategory,
-      content: JSON.stringify(pages.filter(p => p.trim() !== '')),
       description: description,
       is_deleted: false,
       sort_index: editingBookId ? books.find(b => b.id === editingBookId)?.sort_index || 0 : books.length,
@@ -1001,9 +951,38 @@ export const AdminPanelPage: React.FC = () => {
     try {
       if (editingBookId) {
         await updateDoc(doc(db, "books", String(editingBookId)), bookData);
+        // Save content in subcollection
+        const contentRef = collection(db, "books", String(editingBookId), "content");
+        
+        // Delete existing content chunks
+        const existingContent = await getDocs(contentRef);
+        const deleteBatch = writeBatch(db);
+        existingContent.forEach(doc => deleteBatch.delete(doc.ref));
+        await deleteBatch.commit();
+
+        const filteredPages = pages.filter(p => p.trim() !== '');
+        
+        // Save in chunks to avoid 1MB limit
+        const chunkSize = 10;
+        for (let i = 0; i < filteredPages.length; i += chunkSize) {
+            const chunk = filteredPages.slice(i, i + chunkSize);
+            const pageDocRef = doc(contentRef, `chunk_${String(Math.floor(i / chunkSize)).padStart(5, '0')}`);
+            await setDoc(pageDocRef, { pages: chunk });
+        }
         showToast('বইটি আপডেট করা হয়েছে!');
       } else {
-        await addDoc(collection(db, "books"), bookData);
+        const docRef = await addDoc(collection(db, "books"), bookData);
+        // Save content in subcollection
+        const contentRef = collection(db, "books", docRef.id, "content");
+        const filteredPages = pages.filter(p => p.trim() !== '');
+        
+        // Save in chunks to avoid 1MB limit
+        const chunkSize = 10;
+        for (let i = 0; i < filteredPages.length; i += chunkSize) {
+            const chunk = filteredPages.slice(i, i + chunkSize);
+            const pageDocRef = doc(contentRef, `chunk_${String(Math.floor(i / chunkSize)).padStart(5, '0')}`);
+            await setDoc(pageDocRef, { pages: chunk });
+        }
         showToast('বইটি সফলভাবে যোগ করা হয়েছে!');
       }
       resetForm();
