@@ -395,11 +395,20 @@ export const AuthPage: React.FC = () => {
       } else {
         // Register
         try {
+          // Early check for phone number availability in Auth system
+          const emailCheck = `${phoneNumber}@innerpower.app`;
+          const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
+          if (methods.length > 0) {
+            setError("এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে লগইন করুন।");
+            setIsLoading(false);
+            return;
+          }
+
           // Early check for username availability in Firestore
           const usernameRef = doc(db, 'usernames', sanitizedUsername);
           const usernameDoc = await getDoc(usernameRef);
           if (usernameDoc.exists()) {
-            setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন অথবা লগইন করুন।");
+            setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন।");
             setIsUsernameAvailable(false);
             setIsLoading(false);
             return;
@@ -545,10 +554,11 @@ export const AuthPage: React.FC = () => {
             localStorage.setItem('referral_used_device', 'true');
           }
           setIsLogin(true);
-          setPhoneNumber(phoneNumber); // Keep phone number for login
+          setPhoneNumber(''); // Clear phone number
           setUsername('');
           setPassword('');
           setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
+          navigate('/auth'); // Explicitly navigate to ensure UI update
           } catch (fsErr: any) {
             if (fsErr.code === 'resource-exhausted') {
               setError("দুঃখিত, আমাদের সার্ভারের দৈনিক লিমিট শেষ হয়ে গেছে। দয়া করে আগামীকাল আবার চেষ্টা করুন।");

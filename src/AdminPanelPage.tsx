@@ -673,69 +673,68 @@ export const AdminPanelPage: React.FC = () => {
     if (!file) return;
 
     setIsProcessingPdf(true);
+    showToast(`পিডিএফ প্রসেসিং শুরু হচ্ছে...`);
+    
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       
-      // 1. Extract Cover Image from first page
-      const firstPage = await pdf.getPage(1);
-      const viewport = firstPage.getViewport({ scale: 1.5 });
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      
-      if (context) {
-        await firstPage.render({ canvasContext: context, viewport, canvas: canvas }).promise;
-        const coverBase64 = canvas.toDataURL('image/jpeg', 0.8);
-        setCoverUrl(coverBase64);
-        setImagePreview(coverBase64);
-      }
-
-      // 2. Use PDF.js to extract text strictly page-by-page locally
       const extractedPages: string[] = [];
-      showToast(`বইটি প্রসেস করা হচ্ছে (মোট ${pdf.numPages} পৃষ্ঠা)...`);
-
-      // Process pages locally
+      
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
-        
-        // Get text content for the current page
         const textContent = await page.getTextContent();
         
-        // Combine text items for this page only
-        const pageText = textContent.items
-          .map((item: any) => item.str)
-          .join(' ');
-          
-        // Store as a distinct page, even if empty
-        extractedPages.push(pageText.trim());
+        // Improved text extraction:
+        // Sort items by vertical position (top to bottom) then horizontal (left to right)
+        const items = textContent.items as any[];
         
-        console.log(`Page ${i} processed, length: ${pageText.trim().length}`);
+        // Filter out items that are not text
+        const textItems = items.filter(item => 'str' in item);
         
-        // Update progress toast every 5 pages
-        if (i % 5 === 0) {
-          showToast(`প্রসেসিং চলছে: ${i}/${pdf.numPages} পৃষ্ঠা সম্পন্ন...`);
+        textItems.sort((a, b) => {
+          // Sort by Y position (top to bottom, transform[5] is Y)
+          // Use a threshold for Y to group items on the same line
+          if (Math.abs(a.transform[5] - b.transform[5]) > 5) {
+            return b.transform[5] - a.transform[5];
+          }
+          // Sort by X position (left to right, transform[4] is X)
+          return a.transform[4] - b.transform[4];
+        });
+        
+        let pageText = '';
+        for (let i = 0; i < textItems.length; i++) {
+          if (i > 0) {
+            // Heuristic: if the current item is far to the right of the previous item, add a space
+            // If Y position is different, it's a new line, add a space.
+            if (Math.abs(textItems[i].transform[5] - textItems[i-1].transform[5]) > 5) {
+              pageText += ' ';
+            } else if (textItems[i].transform[4] > textItems[i-1].transform[4] + 5) {
+              // If X position is significantly different, add a space
+              pageText += ' ';
+            }
+            // Otherwise, join without space to keep characters together
+          }
+          pageText += textItems[i].str;
         }
+        
+        // Basic cleanup: remove excessive spaces
+        const cleanedText = pageText.replace(/\s+/g, ' ').trim();
+        
+        // Add page label
+        extractedPages.push(`পৃষ্ঠা ${i}\n\n${cleanedText}`);
       }
       
-      // Set metadata from first page text if needed (basic fallback)
-      if (extractedPages.length > 0) {
-        setDescription(extractedPages[0].substring(0, 200) + "...");
-      }
-
-      if (extractedPages.length > 0) {
-        setPages(extractedPages);
-        showToast(`বইটি সফলভাবে প্রসেস করা হয়েছে! মোট পৃষ্ঠা: ${extractedPages.length}`);
-      } else {
-        showToast('PDF থেকে কোন লেখা পাওয়া যায়নি।', 'error');
-      }
+      setPages(extractedPages);
+      setDescription(extractedPages[0]?.substring(0, 200) || "");
+      showToast(`মোট ${extractedPages.length} পৃষ্ঠা সফলভাবে প্রসেস হয়েছে!`);
+      
     } catch (error) {
-      console.error('Error processing PDF:', error);
-      showToast('PDF প্রসেস করতে সমস্যা হয়েছে। অনুগ্রহ করে ইন্টারনেট কানেকশন চেক করুন।', 'error');
+      console.error("Error processing PDF:", error);
+      showToast('PDF প্রসেস করতে সমস্যা হয়েছে।', 'error');
     } finally {
       setIsProcessingPdf(false);
-      if (pdfInputRef.current) pdfInputRef.current.value = '';
+      if (e.target) e.target.value = '';
     }
   };
 
