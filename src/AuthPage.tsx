@@ -395,10 +395,11 @@ export const AuthPage: React.FC = () => {
       } else {
         // Register
         try {
-          // Sanitize phone number: remove spaces
+          // Sanitize inputs
           const sanitizedPhone = phoneNumber.replace(/\s+/g, '');
+          const sanitizedUsername = username.toLowerCase().replace(/\s+/g, '');
           
-          // Early check for phone number availability in Auth system
+          // 1. Early check for phone number availability in Auth system
           const emailCheck = `${sanitizedPhone}@innerpower.app`;
           const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
           if (methods.length > 0) {
@@ -407,9 +408,9 @@ export const AuthPage: React.FC = () => {
             return;
           }
 
-          // Early check for username availability in Firestore
+          // 2. Early check for username availability in Firestore (Direct fetch, no cache)
           const usernameRef = doc(db, 'usernames', sanitizedUsername);
-          const usernameDoc = await getDoc(usernameRef);
+          const usernameDoc = await getDocFromServer(usernameRef);
           if (usernameDoc.exists()) {
             setError("এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে অন্য একটি নাম চেষ্টা করুন।");
             setIsUsernameAvailable(false);
