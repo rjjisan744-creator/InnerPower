@@ -395,8 +395,11 @@ export const AuthPage: React.FC = () => {
       } else {
         // Register
         try {
+          // Sanitize phone number: remove spaces
+          const sanitizedPhone = phoneNumber.replace(/\s+/g, '');
+          
           // Early check for phone number availability in Auth system
-          const emailCheck = `${phoneNumber}@innerpower.app`;
+          const emailCheck = `${sanitizedPhone}@innerpower.app`;
           const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
           if (methods.length > 0) {
             setError("এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে লগইন করুন।");
@@ -419,7 +422,7 @@ export const AuthPage: React.FC = () => {
           const deviceDoc = await getDoc(deviceRef);
           const isMultiAccount = deviceDoc.exists();
 
-          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const userCredential = await createUserWithEmailAndPassword(auth, emailCheck, password);
           const trialEnds = new Date();
           trialEnds.setDate(trialEnds.getDate() + 3);
           
