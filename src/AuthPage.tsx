@@ -117,6 +117,9 @@ export const AuthPage: React.FC = () => {
   const [isUsernameAvailable, setIsUsernameAvailable] = useState<boolean | null>(null);
   const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  
+  const [isPhoneAvailable, setIsPhoneAvailable] = useState<boolean | null>(null);
+  const [isCheckingPhone, setIsCheckingPhone] = useState(false);
 
   useEffect(() => {
     if (isLogin || !username || username.length < 3) {
@@ -135,24 +138,8 @@ export const AuthPage: React.FC = () => {
           return;
         }
         
-        // Check database (usernames collection) - Try cache first
-        try {
-          const usernameCache = await getDocFromCache(doc(db, "usernames", sanitized));
-          if (usernameCache.exists()) {
-            setIsUsernameAvailable(false);
-            const suggestions = [
-              `${sanitized}${Math.floor(Math.random() * 999)}`,
-              `${sanitized}_${Math.random().toString(36).substring(2, 5)}`,
-              `user_${sanitized}`,
-              `${sanitized}24`
-            ];
-            setUsernameSuggestions(suggestions);
-            setIsCheckingUsername(false);
-            return;
-          }
-        } catch (e) {}
-
-        const usernameDoc = await getDoc(doc(db, "usernames", sanitized));
+        // Check database (usernames collection)
+        const usernameDoc = await getDocFromServer(doc(db, "usernames", sanitized));
         if (usernameDoc.exists()) {
           setIsUsernameAvailable(false);
           const suggestions = [
@@ -167,7 +154,7 @@ export const AuthPage: React.FC = () => {
         }
 
         // Check Auth system
-        const email = sanitized.includes('@') ? sanitized : `${sanitized}@innerpower.app`;
+        const email = `${sanitized}@innerpower.app`;
         const methods = await fetchSignInMethodsForEmail(auth, email);
         if (methods.length > 0) {
           setIsUsernameAvailable(false);
@@ -184,7 +171,7 @@ export const AuthPage: React.FC = () => {
 
         setIsUsernameAvailable(true);
         setUsernameSuggestions([]);
-        setError(''); // Clear any registration errors if username becomes available
+        setError('');
       } catch (err) {
         console.error("Error checking username:", err);
       } finally {
@@ -192,11 +179,37 @@ export const AuthPage: React.FC = () => {
       }
     }, 300);
 
-    return () => {
-      clearTimeout(timer);
-      // We don't reset isCheckingUsername here because the next effect will start soon
-    };
+    return () => clearTimeout(timer);
   }, [username, isLogin]);
+
+  useEffect(() => {
+    if (isLogin || !phoneNumber || phoneNumber.length < 10) {
+      setIsPhoneAvailable(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsCheckingPhone(true);
+      try {
+        const sanitizedPhone = phoneNumber.replace(/\s+/g, '');
+        const emailCheck = `${sanitizedPhone}@innerpower.app`;
+        const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
+        
+        if (methods.length > 0) {
+          setIsPhoneAvailable(false);
+        } else {
+          setIsPhoneAvailable(true);
+        }
+        setError('');
+      } catch (err) {
+        console.error("Error checking phone:", err);
+      } finally {
+        setIsCheckingPhone(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [phoneNumber, isLogin]);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -857,8 +870,25 @@ export const AuthPage: React.FC = () => {
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
               placeholder="আপনার ফোন নাম্বার লিখুন"
-              className="w-full px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base"
+              className={`w-full px-4 py-2 rounded-xl border ${
+                isPhoneAvailable === false 
+                  ? 'border-red-500 ring-1 ring-red-500' 
+                  : isPhoneAvailable === true 
+                  ? 'border-emerald-500 ring-1 ring-emerald-500' 
+                  : 'border-zinc-200 dark:border-zinc-800'
+              } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
             />
+            {phoneNumber.length >= 10 && (
+              <div className="mt-1">
+                {isCheckingPhone ? (
+                  <p className="text-[10px] text-zinc-500 animate-pulse">ফোন নাম্বার চেক করা হচ্ছে...</p>
+                ) : isPhoneAvailable === false ? (
+                  <p className="text-[10px] text-red-500 font-bold">এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
+                ) : isPhoneAvailable === true ? (
+                  <p className="text-[10px] text-emerald-500 font-bold">এই ফোন নাম্বারটি এভেইলেবল আছে!</p>
+                ) : null}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">

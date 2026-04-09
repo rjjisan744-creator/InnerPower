@@ -1601,6 +1601,16 @@ export const AdminPanelPage: React.FC = () => {
                         {isExpanded && (
                           <div className="p-4 pt-0 border-t border-black/5 dark:border-white/5 animate-in fade-in slide-in-from-top-2 duration-200">
                             <div className="py-4 space-y-4">
+                              {/* Contact Row */}
+                              <div className="flex items-center justify-between">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-0.5">ফোন নাম্বার</span>
+                                  <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{user.phoneNumber || "N/A"}</span>
+                                </div>
+                              </div>
+                              
+                              <hr className="border-black/5 dark:border-white/5" />
+
                               {/* Password Row */}
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
