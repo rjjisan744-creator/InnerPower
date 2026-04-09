@@ -1547,7 +1547,7 @@ export const AdminPanelPage: React.FC = () => {
                                   {user.username}
                                 </div>
                                 <div className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700"></div>
-                                <div className="text-[11px] text-zinc-500 font-bold">{user.phoneNumber || user.email || "No contact set"}</div>
+                                <div className="text-[11px] text-zinc-500 font-bold">{user.email || "No contact set"}</div>
                               </div>
                               {user.last_active_at && (
                                 <div className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">
@@ -1605,7 +1605,7 @@ export const AdminPanelPage: React.FC = () => {
                               <div className="flex items-center justify-between">
                                 <div className="flex flex-col">
                                   <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-0.5">ফোন নাম্বার</span>
-                                  <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{user.phoneNumber || "N/A"}</span>
+                                  <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{user.email || "N/A"}</span>
                                 </div>
                               </div>
                               

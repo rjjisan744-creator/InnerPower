@@ -67,7 +67,7 @@ export const ProfilePage: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ fullName: '', phoneNumber: '' });
+  const [editForm, setEditForm] = useState({ fullName: '' });
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [referralHistory, setReferralHistory] = useState<any[]>([]);
@@ -109,8 +109,7 @@ export const ProfilePage: React.FC = () => {
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
     setEditForm({
-      fullName: parsedUser.fullName || '',
-      phoneNumber: parsedUser.phoneNumber || ''
+      fullName: parsedUser.fullName || ''
     });
 
     const unsubscribeAuth = auth.onAuthStateChanged((firebaseUser) => {
@@ -136,7 +135,6 @@ export const ProfilePage: React.FC = () => {
             ...userData,
             id: docSnap.id,
             fullName: userData.full_name || parsedUser.fullName,
-            phoneNumber: userData.phone_number || parsedUser.phoneNumber,
             profilePicture: userData.profile_picture || parsedUser.profilePicture,
             referralCode: userData.referral_code || parsedUser.referralCode,
             referralCount: userData.referral_count || 0,
@@ -343,12 +341,10 @@ export const ProfilePage: React.FC = () => {
     setLoading(true);
     try {
       await updateDoc(doc(db, "users", user.id), { 
-        full_name: editForm.fullName,
-        phone_number: editForm.phoneNumber
+        full_name: editForm.fullName
       });
       saveToLocalStorage({ 
-        fullName: editForm.fullName,
-        phoneNumber: editForm.phoneNumber
+        fullName: editForm.fullName
       });
       setIsEditing(false);
       showToast('Profile updated successfully!');
@@ -582,8 +578,8 @@ export const ProfilePage: React.FC = () => {
 
           <h2 className="text-2xl font-black tracking-tight mb-1">{profileData.fullName}</h2>
           <div className="flex items-center justify-center gap-2 text-zinc-500 dark:text-zinc-400 font-medium">
-            <Phone size={14} />
-            <span className="text-sm">{profileData.phoneNumber}</span>
+            <UserIcon size={14} />
+            <span className="text-sm">{profileData.fullName}</span>
           </div>
         </section>
 
@@ -624,17 +620,6 @@ export const ProfilePage: React.FC = () => {
                       placeholder="আপনার পুরো নাম লিখুন"
                     />
                     <p className="mt-2 text-[9px] font-medium text-zinc-400 italic">* এটি শুধুমাত্র আপনার প্রোফাইলে দেখানোর জন্য ব্যবহার করা হবে।</p>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-zinc-400 mb-2 uppercase tracking-[0.2em]">Phone Number</label>
-                    <input 
-                      type="tel"
-                      value={editForm.phoneNumber}
-                      onChange={(e) => setEditForm({...editForm, phoneNumber: e.target.value})}
-                      className="w-full p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border-2 border-transparent focus:border-emerald-500/50 outline-none transition-all font-bold"
-                      placeholder="Enter your phone number"
-                      required
-                    />
                   </div>
                   <button 
                     type="submit"

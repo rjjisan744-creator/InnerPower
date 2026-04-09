@@ -66,7 +66,6 @@ export const AuthPage: React.FC = () => {
     return localStorage.getItem('has_registered') === 'true';
   });
   const [username, setUsername] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [error, setError] = useState('');
@@ -229,21 +228,18 @@ export const AuthPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const isMultiAccount = false;
 
-    if (!isLogin && (!username || !password || !phoneNumber)) {
+    if (!isLogin && (!username || !password)) {
       setError("সব ঘর পূরণ করুন");
       return;
     }
 
-    if (isLogin && (!phoneNumber || !password)) {
+    if (isLogin && (!username || !password)) {
       setError("সব ঘর পূরণ করুন");
       return;
     }
 
-    if (!isLogin && phoneNumber.length < 10) {
-      setError("সঠিক নাম্বার দিন");
-      return;
-    }
 
     if (password.length < 6) {
       setError("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে");
@@ -287,7 +283,7 @@ export const AuthPage: React.FC = () => {
       }
     }
 
-    const email = `${phoneNumber}@innerpower.app`;
+    const email = `${username}@innerpower.app`;
 
     try {
       setIsLoading(true);
@@ -535,7 +531,6 @@ export const AuthPage: React.FC = () => {
             localStorage.setItem('referral_used_device', 'true');
           }
           setIsLogin(true);
-          setPhoneNumber(''); // Clear phone number
           setUsername('');
           setPassword('');
           setError('রেজিস্ট্রেশন সফল হয়েছে। এখন লগইন করুন।');
