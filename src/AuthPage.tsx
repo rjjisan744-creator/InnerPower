@@ -878,14 +878,20 @@ export const AuthPage: React.FC = () => {
                   : 'border-zinc-200 dark:border-zinc-800'
               } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
             />
-            {phoneNumber.length >= 10 && (
+            {!isLogin && phoneNumber.length >= 10 && (
               <div className="mt-1">
                 {isCheckingPhone ? (
                   <p className="text-[10px] text-zinc-500 animate-pulse">ফোন নাম্বার চেক করা হচ্ছে...</p>
                 ) : isPhoneAvailable === false ? (
-                  <p className="text-[10px] text-red-500 font-bold">এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
+                  <div className="flex items-center gap-1.5 text-red-500">
+                    <X size={12} />
+                    <p className="text-[10px] font-bold">এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
+                  </div>
                 ) : isPhoneAvailable === true ? (
-                  <p className="text-[10px] text-emerald-500 font-bold">এই ফোন নাম্বারটি এভেইলেবল আছে!</p>
+                  <div className="flex items-center gap-1.5 text-emerald-500">
+                    <Check size={12} />
+                    <p className="text-[10px] font-bold">এই ফোন নাম্বারটি এভেইলেবল আছে!</p>
+                  </div>
                 ) : null}
               </div>
             )}
