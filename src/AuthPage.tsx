@@ -117,9 +117,6 @@ export const AuthPage: React.FC = () => {
   const [isUsernameAvailable, setIsUsernameAvailable] = useState<boolean | null>(null);
   const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
-  
-  const [isPhoneAvailable, setIsPhoneAvailable] = useState<boolean | null>(null);
-  const [isCheckingPhone, setIsCheckingPhone] = useState(false);
 
   useEffect(() => {
     if (isLogin || !username || username.length < 3) {
@@ -182,40 +179,6 @@ export const AuthPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [username, isLogin]);
 
-  useEffect(() => {
-    console.log("Phone number useEffect triggered:", { isLogin, phoneNumber, auth: !!auth });
-    if (!phoneNumber || phoneNumber.length < 10) {
-      console.log("Phone number validation skipped:", { isLogin, phoneNumber });
-      setIsPhoneAvailable(null);
-      return;
-    }
-
-    const checkPhone = async () => {
-      setIsCheckingPhone(true);
-      console.log("Checking phone:", phoneNumber);
-      try {
-        const sanitizedPhone = phoneNumber.replace(/\s+/g, '');
-        const emailCheck = `${sanitizedPhone}@innerpower.app`;
-        console.log("Checking email:", emailCheck);
-        const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
-        console.log("Methods found:", methods);
-        
-        if (methods.length > 0) {
-          setIsPhoneAvailable(false);
-          setError("এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে লগইন করুন।");
-        } else {
-          setIsPhoneAvailable(true);
-          setError('');
-        }
-      } catch (err) {
-        console.error("Error checking phone:", err);
-      } finally {
-        setIsCheckingPhone(false);
-      }
-    };
-
-    checkPhone();
-  }, [phoneNumber, isLogin]);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -866,42 +829,6 @@ export const AuthPage: React.FC = () => {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              ফোন নাম্বার (Phone Number)
-            </label>
-            <input
-              type="tel"
-              required
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="আপনার ফোন নাম্বার লিখুন"
-              className={`w-full px-4 py-2 rounded-xl border ${
-                isPhoneAvailable === false 
-                  ? 'border-red-500 ring-1 ring-red-500' 
-                  : isPhoneAvailable === true 
-                  ? 'border-emerald-500 ring-1 ring-emerald-500' 
-                  : 'border-zinc-200 dark:border-zinc-800'
-              } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
-            />
-            {!isLogin && phoneNumber.length >= 10 && (
-              <div className="mt-1">
-                {isCheckingPhone ? (
-                  <p className="text-[10px] text-zinc-500 animate-pulse">ফোন নাম্বার চেক করা হচ্ছে...</p>
-                ) : isPhoneAvailable === false ? (
-                  <div className="flex items-center gap-1.5 text-red-500">
-                    <X size={12} />
-                    <p className="text-[10px] font-bold">এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
-                  </div>
-                ) : isPhoneAvailable === true ? (
-                  <div className="flex items-center gap-1.5 text-emerald-500">
-                    <Check size={12} />
-                    <p className="text-[10px] font-bold">এই ফোন নাম্বারটি এভেইলেবল আছে!</p>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               {t('password')}
