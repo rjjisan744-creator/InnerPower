@@ -130,11 +130,7 @@ service cloud.firestore {
     }
 
     match /notifications/{notifId} {
-      allow list: if isAuthenticated() && (
-        isAdmin() || 
-        request.query.filters.get('user_id', null) == request.auth.uid || 
-        request.query.filters.get('user_id', null) == null
-      );
+      allow list: if isAuthenticated();
       allow get: if isAuthenticated() && (
         isAdmin() ||
         (resource != null && (
@@ -153,9 +149,7 @@ service cloud.firestore {
     }
 
     match /support_messages/{msgId} {
-      allow list: if isAdmin() || 
-                     (isAuthenticated() && request.query.filters.get('user_id', null) == request.auth.uid) ||
-                     (request.query.filters.get('user_id', '') is string && request.query.filters.get('user_id', '').matches("^web-.*"));
+      allow list: if isAuthenticated();
       allow get: if isAdmin() || 
                      (isAuthenticated() && resource != null && resource.data.user_id == request.auth.uid) ||
                      (resource != null && resource.data.get('user_id', '') is string && resource.data.get('user_id', '').matches("^web-.*"));

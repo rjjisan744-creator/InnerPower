@@ -197,10 +197,11 @@ export const AuthPage: React.FC = () => {
         
         if (methods.length > 0) {
           setIsPhoneAvailable(false);
+          setError("এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে লগইন করুন।");
         } else {
           setIsPhoneAvailable(true);
+          setError('');
         }
-        setError('');
       } catch (err) {
         console.error("Error checking phone:", err);
       } finally {
