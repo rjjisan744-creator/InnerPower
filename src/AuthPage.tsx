@@ -183,17 +183,22 @@ export const AuthPage: React.FC = () => {
   }, [username, isLogin]);
 
   useEffect(() => {
-    if (isLogin || !phoneNumber || phoneNumber.length < 10) {
+    console.log("Phone number useEffect triggered:", { isLogin, phoneNumber, auth: !!auth });
+    if (!phoneNumber || phoneNumber.length < 10) {
+      console.log("Phone number validation skipped:", { isLogin, phoneNumber });
       setIsPhoneAvailable(null);
       return;
     }
 
-    const timer = setTimeout(async () => {
+    const checkPhone = async () => {
       setIsCheckingPhone(true);
+      console.log("Checking phone:", phoneNumber);
       try {
         const sanitizedPhone = phoneNumber.replace(/\s+/g, '');
         const emailCheck = `${sanitizedPhone}@innerpower.app`;
+        console.log("Checking email:", emailCheck);
         const methods = await fetchSignInMethodsForEmail(auth, emailCheck);
+        console.log("Methods found:", methods);
         
         if (methods.length > 0) {
           setIsPhoneAvailable(false);
@@ -207,9 +212,9 @@ export const AuthPage: React.FC = () => {
       } finally {
         setIsCheckingPhone(false);
       }
-    }, 300);
+    };
 
-    return () => clearTimeout(timer);
+    checkPhone();
   }, [phoneNumber, isLogin]);
 
   useEffect(() => {
