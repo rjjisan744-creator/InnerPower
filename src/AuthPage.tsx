@@ -343,7 +343,6 @@ export const AuthPage: React.FC = () => {
             trialEndsAt: userData.trial_ends_at,
             fullName: userData.full_name,
             email: userData.email,
-            phoneNumber: userData.phone_number,
             profilePicture: userData.profile_picture,
             referralCode: userData.referral_code,
             referralCount: userData.referral_count,
@@ -374,18 +373,8 @@ export const AuthPage: React.FC = () => {
         // Register
         try {
           // Sanitize inputs
-          const sanitizedPhone = phoneNumber.replace(/\s+/g, '');
           const sanitizedUsername = username.toLowerCase().replace(/\s+/g, '');
           
-          // 1. Check phone number availability
-          const phoneEmail = `${sanitizedPhone}@innerpower.app`;
-          const phoneMethods = await fetchSignInMethodsForEmail(auth, phoneEmail);
-          if (phoneMethods.length > 0) {
-            setError("এই ফোন নাম্বারটি ইতিমধ্যে ব্যবহার করা হয়েছে। দয়া করে লগইন করুন।");
-            setIsLoading(false);
-            return;
-          }
-
           // 2. Check username availability
           const usernameRef = doc(db, 'usernames', sanitizedUsername);
           const usernameDoc = await getDocFromServer(usernameRef);
@@ -397,7 +386,8 @@ export const AuthPage: React.FC = () => {
           }
 
           // 3. Proceed with registration
-          const userCredential = await createUserWithEmailAndPassword(auth, phoneEmail, password);
+          const email = `${sanitizedUsername}@innerpower.app`;
+          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
           const trialEnds = new Date();
           trialEnds.setDate(trialEnds.getDate() + 3);
           
@@ -474,7 +464,6 @@ export const AuthPage: React.FC = () => {
             full_name: username,
             username: sanitizedUsername,
             email: email,
-            phone_number: phoneNumber,
             password,
                 role: 'user',
                 status: isMultiAccount ? 'blocked' : 'active',
