@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from './AppContext';
-import { LogIn, UserPlus, Shield, FileText, X, MessageSquare, Phone, Check } from 'lucide-react';
+import { LogIn, UserPlus, Shield, FileText, X, MessageSquare, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SupportContactModal } from './components/SupportContactModal';
 import { auth, db } from './firebase';
@@ -746,72 +746,70 @@ export const AuthPage: React.FC = () => {
         </AnimatePresence>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                ইউজারনেম (Username)
-              </label>
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\s+/g, '');
-                  setUsername(val);
-                  setError('');
-                  if (val.length >= 3) {
-                    setIsCheckingUsername(true);
-                  } else {
-                    setIsCheckingUsername(false);
-                  }
-                }}
-                className={`w-full px-4 py-2 rounded-xl border ${
-                  isUsernameAvailable === false 
-                    ? 'border-red-500 ring-1 ring-red-500' 
-                    : isUsernameAvailable === true 
-                    ? 'border-emerald-500 ring-1 ring-emerald-500' 
-                    : 'border-zinc-200 dark:border-zinc-800'
-                } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
-              />
-              {username.length >= 3 && (
-                <div className="mt-1">
-                  {isCheckingUsername ? (
-                    <p className="text-[10px] text-zinc-500 animate-pulse">ইউজারনেম চেক করা হচ্ছে...</p>
-                  ) : isUsernameAvailable === false ? (
-                    <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20 space-y-3">
-                      <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
-                        <X size={14} className="shrink-0" />
-                        <p className="text-[11px] font-black uppercase tracking-tight">এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
-                      </div>
-                      
-                      {usernameSuggestions.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400">নিচের নামগুলো চেষ্টা করতে পারেন:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {usernameSuggestions.map((suggestion) => (
-                              <button
-                                key={suggestion}
-                                type="button"
-                                onClick={() => {
-                                  setUsername(suggestion);
-                                  setError('');
-                                }}
-                                className="text-[10px] font-black bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all shadow-sm active:scale-95"
-                              >
-                                {suggestion}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+          <div>
+            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              ইউজারনেম (Username)
+            </label>
+            <input
+              type="text"
+              required
+              value={username}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\s+/g, '');
+                setUsername(val);
+                setError('');
+                if (!isLogin && val.length >= 3) {
+                  setIsCheckingUsername(true);
+                } else {
+                  setIsCheckingUsername(false);
+                }
+              }}
+              className={`w-full px-4 py-2 rounded-xl border ${
+                !isLogin && isUsernameAvailable === false 
+                  ? 'border-red-500 ring-1 ring-red-500' 
+                  : !isLogin && isUsernameAvailable === true 
+                  ? 'border-emerald-500 ring-1 ring-emerald-500' 
+                  : 'border-zinc-200 dark:border-zinc-800'
+              } bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-base`}
+            />
+            {!isLogin && username.length >= 3 && (
+              <div className="mt-1">
+                {isCheckingUsername ? (
+                  <p className="text-[10px] text-zinc-500 animate-pulse">ইউজারনেম চেক করা হচ্ছে...</p>
+                ) : isUsernameAvailable === false ? (
+                  <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20 space-y-3">
+                    <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                      <X size={14} className="shrink-0" />
+                      <p className="text-[11px] font-black uppercase tracking-tight">এই ইউজারনেমটি ইতিমধ্যে ব্যবহার করা হয়েছে!</p>
                     </div>
-                  ) : isUsernameAvailable === true ? (
-                    <p className="text-[10px] text-emerald-500 font-bold">এই ইউজারনেমটি এভেইলেবল আছে!</p>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          )}
+                    
+                    {usernameSuggestions.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400">নিচের নামগুলো চেষ্টা করতে পারেন:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {usernameSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => {
+                                setUsername(suggestion);
+                                setError('');
+                              }}
+                              className="text-[10px] font-black bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all shadow-sm active:scale-95"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : isUsernameAvailable === true ? (
+                  <p className="text-[10px] text-emerald-500 font-bold">এই ইউজারনেমটি এভেইলেবল আছে!</p>
+                ) : null}
+              </div>
+            )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
