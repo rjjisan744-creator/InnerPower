@@ -5,6 +5,7 @@ import { Book, User } from './types';
 import { Home, ChevronLeft, ChevronRight, File } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CommentBox } from './components/CommentBox';
+import PdfViewer from './components/PdfViewer';
 import { SubscriptionOverlay } from './SubscriptionOverlay';
 import { db, auth } from './firebase';
 import { 
@@ -26,6 +27,7 @@ export const ReaderPage: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState(pageParam ? parseInt(pageParam) : 1);
   const [pages, setPages] = useState<string[]>([]);
+  const [showPdf, setShowPdf] = useState(false);
   const { t } = useApp();
   const navigate = useNavigate();
 
@@ -79,6 +81,13 @@ export const ReaderPage: React.FC = () => {
       localStorage.setItem(`last_page_${id}`, currentPage.toString());
     }
   }, [id, currentPage]);
+
+  useEffect(() => {
+    if (book && book.pdf_url && !showPdf) {
+      console.log("ReaderPage: Automatically opening PDF for book", book.id);
+      setShowPdf(true);
+    }
+  }, [book, showPdf]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -259,7 +268,16 @@ export const ReaderPage: React.FC = () => {
       {/* Reader Area */}
       <main className="max-w-3xl mx-auto p-6 md:p-12 pb-32">
         {(book.pdf_url || book.author || book.description) && (
-          <div className="mb-8 flex justify-center">
+          <div className="mb-8 flex justify-center gap-4">
+            {book.pdf_url && (
+              <button
+                onClick={() => setShowPdf(true)}
+                className="inline-flex items-center gap-3 p-3 px-5 bg-emerald-600 text-white rounded-2xl shadow-lg hover:shadow-xl transition-all group"
+              >
+                <File size={16} />
+                <span className="text-xs font-black uppercase tracking-widest">পিডিএফ পড়ুন</span>
+              </button>
+            )}
             <Link 
               to={`/book/${book.id}/info`}
               className="inline-flex items-center gap-3 p-3 px-5 bg-white dark:bg-zinc-900 rounded-2xl border border-black/5 dark:border-white/10 shadow-lg hover:shadow-xl transition-all group"
@@ -275,6 +293,9 @@ export const ReaderPage: React.FC = () => {
               </div>
             </Link>
           </div>
+        )}
+        {showPdf && book.pdf_url && (
+          <PdfViewer pdfUrl={book.pdf_url} onClose={() => setShowPdf(false)} />
         )}
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-black tracking-tight mb-2">{book.title}</h1>

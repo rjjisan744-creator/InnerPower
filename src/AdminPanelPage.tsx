@@ -3,18 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from './AppContext';
 import { CATEGORIES } from './constants';
 import { User, Book, Category, Note } from './types';
-import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle, FileUp } from 'lucide-react';
+import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
-import * as pdfjsLib from 'pdfjs-dist';
-// @ts-ignore
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 import { AUTHORIZED_ADMIN_EMAILS } from './App';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage } from './firebase';
 
 export const AdminPanelPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -35,7 +32,7 @@ export const AdminPanelPage: React.FC = () => {
   const [bookReadersMap, setBookReadersMap] = useState<Record<string, string[]>>({});
   const [selectedBookForReaders, setSelectedBookForReaders] = useState<Book | null>(null);
   const [totalUniqueReaders, setTotalUniqueReaders] = useState(0);
-  const [activeTab, setActiveTab] = useState<'books' | 'users' | 'recycle' | 'settings' | 'referrals' | 'notifications' | 'categories' | 'subscriptions' | 'support'>('books');
+  const [activeTab, setActiveTab] = useState<'books' | 'users' | 'recycle' | 'settings' | 'referrals' | 'notifications' | 'categories' | 'subscriptions' | 'support' | 'simple-books'>('books');
   const [userSearch, setUserSearch] = useState('');
   const [userLimit, setUserLimit] = useState(100);
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'pending' | 'blocked' | 'active' | 'online' | 'offline' | 'expired'>('all');
@@ -87,6 +84,47 @@ export const AdminPanelPage: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingTrialUserId, setEditingTrialUserId] = useState<string | null>(null);
   const [newTrialDate, setNewTrialDate] = useState('');
+
+  // Simple Book Form State
+  const [simpleBookTitle, setSimpleBookTitle] = useState('');
+  const [simpleBookCover, setSimpleBookCover] = useState<File | null>(null);
+  const [simpleBookFile, setSimpleBookFile] = useState<File | null>(null);
+  const [isUploadingSimpleBook, setIsUploadingSimpleBook] = useState(false);
+
+  const handleSimpleBookUpload = async () => {
+    if (!simpleBookTitle || !simpleBookCover || !simpleBookFile) {
+      alert('সব তথ্য পূরণ করুন');
+      return;
+    }
+    setIsUploadingSimpleBook(true);
+    try {
+      const coverRef = ref(storage, `simple_books/covers/${Date.now()}_${simpleBookCover.name}`);
+      const fileRef = ref(storage, `simple_books/files/${Date.now()}_${simpleBookFile.name}`);
+      
+      await uploadBytes(coverRef, simpleBookCover);
+      await uploadBytes(fileRef, simpleBookFile);
+      
+      const coverUrl = await getDownloadURL(coverRef);
+      const fileUrl = await getDownloadURL(fileRef);
+      
+      await addDoc(collection(db, 'simple_books'), {
+        title: simpleBookTitle,
+        cover_url: coverUrl,
+        file_url: fileUrl,
+        created_at: serverTimestamp()
+      });
+      
+      alert('বই আপলোড হয়েছে!');
+      setSimpleBookTitle('');
+      setSimpleBookCover(null);
+      setSimpleBookFile(null);
+    } catch (e) {
+      console.error(e);
+      alert('আপলোড ব্যর্থ হয়েছে');
+    } finally {
+      setIsUploadingSimpleBook(false);
+    }
+  };
 
   // Category Form State
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -655,6 +693,45 @@ export const AdminPanelPage: React.FC = () => {
     );
   };
 
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      showToast('ফাইলটি অনেক বড় (৫০ এমবি-এর বেশি)। দয়া করে ছোট ফাইল আপলোড করুন।', 'error');
+      return;
+    }
+
+    setIsProcessingPdf(true);
+    showToast(`পিডিএফ আপলোড হচ্ছে...`);
+    
+    try {
+      const storageRef = ref(storage, `books/${Date.now()}_${file.name}`);
+      const metadata = { contentType: 'application/pdf' };
+      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+
+      const downloadURL = await new Promise<string>((resolve, reject) => {
+        uploadTask.on('state_changed', 
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            console.log('Upload is ' + progress + '% done');
+          }, 
+          reject, 
+          () => getDownloadURL(uploadTask.snapshot.ref).then(resolve).catch(reject)
+        );
+      });
+      setPdfUrl(downloadURL);
+
+      showToast('পিডিএফ সফলভাবে আপলোড হয়েছে!');
+    } catch (error) {
+      console.error("Error uploading PDF:", error);
+      showToast('পিডিএফ আপলোড করতে সমস্যা হয়েছে।', 'error');
+    } finally {
+      setIsProcessingPdf(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -665,76 +742,6 @@ export const AdminPanelPage: React.FC = () => {
         setCoverUrl(base64String);
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsProcessingPdf(true);
-    showToast(`পিডিএফ প্রসেসিং শুরু হচ্ছে...`);
-    
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      
-      const extractedPages: string[] = [];
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        
-        // Improved text extraction:
-        // Sort items by vertical position (top to bottom) then horizontal (left to right)
-        const items = textContent.items as any[];
-        
-        // Filter out items that are not text
-        const textItems = items.filter(item => 'str' in item);
-        
-        textItems.sort((a, b) => {
-          // Sort by Y position (top to bottom, transform[5] is Y)
-          // Use a threshold for Y to group items on the same line
-          if (Math.abs(a.transform[5] - b.transform[5]) > 5) {
-            return b.transform[5] - a.transform[5];
-          }
-          // Sort by X position (left to right, transform[4] is X)
-          return a.transform[4] - b.transform[4];
-        });
-        
-        let pageText = '';
-        for (let i = 0; i < textItems.length; i++) {
-          if (i > 0) {
-            // Heuristic: if the current item is far to the right of the previous item, add a space
-            // If Y position is different, it's a new line, add a space.
-            if (Math.abs(textItems[i].transform[5] - textItems[i-1].transform[5]) > 5) {
-              pageText += ' ';
-            } else if (textItems[i].transform[4] > textItems[i-1].transform[4] + 5) {
-              // If X position is significantly different, add a space
-              pageText += ' ';
-            }
-            // Otherwise, join without space to keep characters together
-          }
-          pageText += textItems[i].str;
-        }
-        
-        // Basic cleanup: remove excessive spaces
-        const cleanedText = pageText.replace(/\s+/g, ' ').trim();
-        
-        // Add page label
-        extractedPages.push(`পৃষ্ঠা ${i}\n\n${cleanedText}`);
-      }
-      
-      setPages(extractedPages);
-      setDescription(extractedPages[0]?.substring(0, 200) || "");
-      showToast(`মোট ${extractedPages.length} পৃষ্ঠা সফলভাবে প্রসেস হয়েছে!`);
-      
-    } catch (error) {
-      console.error("Error processing PDF:", error);
-      showToast('PDF প্রসেস করতে সমস্যা হয়েছে।', 'error');
-    } finally {
-      setIsProcessingPdf(false);
-      if (e.target) e.target.value = '';
     }
   };
 
@@ -1072,7 +1079,6 @@ export const AdminPanelPage: React.FC = () => {
     setTitle(book.title);
     setAuthor(book.author || '');
     setCoverUrl(book.cover_url);
-    setPdfUrl(book.pdf_url || '');
     // If category is "New book, Love Story", set primary category to "Love Story"
     const categories = book.category?.split(', ') || [];
     const primaryCategory = categories.length > 1 ? categories[1] : categories[0];
@@ -1095,7 +1101,6 @@ export const AdminPanelPage: React.FC = () => {
     setTitle('');
     setAuthor('');
     setCoverUrl('');
-    setPdfUrl('');
     setCategory('New book');
     setDescription('');
     setPages(['']);
@@ -1347,6 +1352,12 @@ export const AdminPanelPage: React.FC = () => {
             className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'support' ? 'bg-rose-500 text-white shadow-md' : 'text-zinc-400'}`}
           >
             Support
+          </button>
+          <button
+            onClick={() => setActiveTab('simple-books')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'simple-books' ? 'bg-rose-500 text-white shadow-md' : 'text-zinc-400'}`}
+          >
+            Simple Books
           </button>
         </div>
 
@@ -2901,16 +2912,6 @@ export const AdminPanelPage: React.FC = () => {
                           />
                         </div>
                         <div className="relative">
-                          <File className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                          <input
-                            type="text"
-                            placeholder="ফাইল লিঙ্ক (ঐচ্ছিক)"
-                            value={pdfUrl}
-                            onChange={(e) => setPdfUrl(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold"
-                          />
-                        </div>
-                        <div className="relative">
                           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
                           <select
                             value={category}
@@ -2946,26 +2947,6 @@ export const AdminPanelPage: React.FC = () => {
                                 <FileText size={12} />
                                 একবারে সব যোগ করুন
                               </button>
-                              <button 
-                                type="button"
-                                onClick={() => pdfInputRef.current?.click()}
-                                disabled={isProcessingPdf}
-                                className="text-[10px] font-black uppercase tracking-widest text-purple-600 flex items-center gap-1 hover:underline disabled:opacity-50"
-                              >
-                                {isProcessingPdf ? (
-                                  <div className="w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                  <FileUp size={12} />
-                                )}
-                                PDF থেকে যোগ করুন
-                              </button>
-                              <input 
-                                type="file" 
-                                ref={pdfInputRef} 
-                                onChange={handlePdfChange} 
-                                accept=".pdf" 
-                                className="hidden" 
-                              />
                               <button 
                                 type="button"
                                 onClick={() => setPages([...pages, ''])}

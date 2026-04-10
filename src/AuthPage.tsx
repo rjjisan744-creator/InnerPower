@@ -504,6 +504,7 @@ export const AuthPage: React.FC = () => {
                 });
               }
 
+              const deviceRef = doc(db, 'devices', deviceId);
               if (!isMultiAccount) {
                 transaction.set(deviceRef, {
                   uid: userCredential.user.uid,

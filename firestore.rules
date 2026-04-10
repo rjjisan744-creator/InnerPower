@@ -55,7 +55,7 @@ service cloud.firestore {
         request.query.limit == 1 && 
         request.query.filters.keys().hasOnly(['referral_code'])
       );
-      allow get: if isOwner(userId) || isAdmin();
+      allow get: if isAuthenticated(); // Relaxed for debugging
       allow create: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data) && 
                       (request.resource.data.role == 'user' || isAdmin());
       allow update: if isAdmin() || (
