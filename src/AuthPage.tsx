@@ -928,26 +928,6 @@ export const AuthPage: React.FC = () => {
           <div className="flex flex-col items-center gap-2 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
             <div className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1">সাপোর্ট ও যোগাযোগ</div>
             <div className="flex flex-wrap items-center justify-center gap-4">
-              <a 
-                href={`https://wa.me/88${smsSupportNumber || '01990608143'}`} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-[11px] font-bold text-emerald-600 hover:scale-105 transition-transform"
-              >
-                <div className="p-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-                  <MessageSquare size={14} />
-                </div>
-                WhatsApp
-              </a>
-              <a 
-                href={`imo://chat?phone=88${smsSupportNumber || '01990608143'}`} 
-                className="flex items-center gap-2 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 hover:scale-105 transition-transform"
-              >
-                <div className="p-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                  <MessageSquare size={14} />
-                </div>
-                imo
-              </a>
               <button 
                 onClick={() => setShowSupportModal(true)}
                 className="flex items-center gap-2 text-[11px] font-bold text-rose-600 hover:scale-105 transition-transform"

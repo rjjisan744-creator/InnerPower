@@ -67,24 +67,6 @@ export const BlockedAccountPage: React.FC = () => {
 
         <div className="bg-rose-50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-900/20 p-6 rounded-3xl space-y-4">
           <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">সাপোর্টে যোগাযোগ করুন</p>
-          <div className="grid grid-cols-2 gap-3">
-            <a 
-              href={`https://wa.me/88${smsSupportNumber || '01990608143'}`} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-zinc-800 rounded-2xl text-emerald-600 text-sm font-black shadow-sm hover:shadow-md transition-all"
-            >
-              <MessageSquare size={18} />
-              WhatsApp
-            </a>
-            <a 
-              href={`imo://chat?phone=88${smsSupportNumber || '01990608143'}`} 
-              className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-zinc-800 rounded-2xl text-zinc-600 dark:text-zinc-300 text-sm font-black shadow-sm hover:shadow-md transition-all"
-            >
-              <MessageSquare size={18} />
-              imo
-            </a>
-          </div>
           <button 
             onClick={() => setShowSupportModal(true)}
             className="w-full flex items-center justify-center gap-3 py-4 bg-rose-500 text-white rounded-2xl text-sm font-black shadow-lg shadow-rose-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all"

@@ -585,19 +585,17 @@ export const HomePage: React.FC = () => {
                   আপনার লেখা বই, ছোটগল্প কিংবা জীবনের বিশেষ কোনো স্মৃতি কি সবার সাথে শেয়ার করতে চান? আমাদের অ্যাপে আপনার কন্টেন্ট প্রকাশ করতে এখনই আমাদের সাথে যোগাযোগ করুন।
                 </p>
                 
-                <a
-                  href="https://wa.me/8801613071344"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => setShowSupportModal(true)}
                   className="w-full py-5 bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3"
                 >
                   <UserIcon size={20} />
-                  WhatsApp-এ যোগাযোগ করুন
-                </a>
+                  লাইভ চ্যাটে যোগাযোগ করুন
+                </button>
               </div>
 
               <p className="mt-6 text-center text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                01990608143 (WhatsApp Only)
+                InnerPower Library
               </p>
             </motion.div>
           </div>
