@@ -108,6 +108,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /simple_books/{bookId} {
+      allow read: if true; // Publicly readable
+      allow write: if isAdmin();
+    }
+
     match /categories/{catId} {
       allow read: if true; // Publicly readable
       allow write: if isAdmin();

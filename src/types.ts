@@ -68,6 +68,7 @@ export interface Book {
 export interface SimpleBook {
   id: string;
   title: string;
+  category: string;
   cover_url: string;
   file_url: string;
   created_at: string;

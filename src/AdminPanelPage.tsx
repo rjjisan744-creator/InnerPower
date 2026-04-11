@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from './AppContext';
 import { CATEGORIES } from './constants';
-import { User, Book, Category, Note } from './types';
+import { User, Book, Category, SimpleBook, Note } from './types';
 import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
@@ -10,7 +10,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 import { AUTHORIZED_ADMIN_EMAILS } from './App';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, uploadBytesResumable, deleteObject } from 'firebase/storage';
 import { storage } from './firebase';
 
 export const AdminPanelPage: React.FC = () => {
@@ -85,15 +85,16 @@ export const AdminPanelPage: React.FC = () => {
   const [editingTrialUserId, setEditingTrialUserId] = useState<string | null>(null);
   const [newTrialDate, setNewTrialDate] = useState('');
 
-  // Simple Book Form State
   const [simpleBookTitle, setSimpleBookTitle] = useState('');
   const [simpleBookCover, setSimpleBookCover] = useState<File | null>(null);
   const [simpleBookFile, setSimpleBookFile] = useState<File | null>(null);
+  const [simpleBookCategory, setSimpleBookCategory] = useState('');
   const [isUploadingSimpleBook, setIsUploadingSimpleBook] = useState(false);
+  const [simpleBooks, setSimpleBooks] = useState<SimpleBook[]>([]);
 
   const handleSimpleBookUpload = async () => {
-    if (!simpleBookTitle || !simpleBookCover || !simpleBookFile) {
-      alert('সব তথ্য পূরণ করুন');
+    if (!simpleBookTitle || !simpleBookCover || !simpleBookFile || !simpleBookCategory) {
+      alert('বইয়ের নাম, ক্যাটাগরি, কভার এবং পিডিএফ ফাইল সিলেক্ট করুন');
       return;
     }
     setIsUploadingSimpleBook(true);
@@ -109,26 +110,26 @@ export const AdminPanelPage: React.FC = () => {
       
       await addDoc(collection(db, 'simple_books'), {
         title: simpleBookTitle,
+        category: simpleBookCategory,
         cover_url: coverUrl,
         file_url: fileUrl,
         created_at: serverTimestamp()
       });
       
-      alert('বই আপলোড হয়েছে!');
+      alert('বই সফলভাবে আপলোড হয়েছে!');
       setSimpleBookTitle('');
+      setSimpleBookCategory('');
       setSimpleBookCover(null);
       setSimpleBookFile(null);
     } catch (e) {
-      console.error(e);
-      alert('আপলোড ব্যর্থ হয়েছে');
+      console.error('Upload error:', e);
+      alert('আপলোড ব্যর্থ হয়েছে: ' + (e instanceof Error ? e.message : 'Unknown error'));
     } finally {
       setIsUploadingSimpleBook(false);
     }
   };
-
-  // Category Form State
-  const [newCategoryName, setNewCategoryName] = useState('');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editCategoryPassword, setEditCategoryPassword] = useState('');
@@ -269,6 +270,11 @@ export const AdminPanelPage: React.FC = () => {
         setIsLoading(false);
       });
 
+      console.log("AdminPanel: Setting up simple books listener...");
+      const unsubSimpleBooks = onSnapshot(collection(db, 'simple_books'), (snapshot) => {
+        setSimpleBooks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimpleBook)));
+      }, (err) => console.error('AdminPanel: Simple Books listener error:', err));
+
       console.log("AdminPanel: Setting up reading history listener...");
       // Limit reading history to last 500 entries to save quota and memory
       const unsubReadingHistory = onSnapshot(query(collection(db, "reading_history"), orderBy("read_at", "desc"), limit(500)), (snap) => {
@@ -399,6 +405,7 @@ export const AdminPanelPage: React.FC = () => {
       return () => {
         unsubUsers();
         unsubBooks();
+        unsubSimpleBooks();
         unsubReadingHistory();
         unsubDeletedBooks();
         unsubCategories();
@@ -708,18 +715,8 @@ export const AdminPanelPage: React.FC = () => {
     try {
       const storageRef = ref(storage, `books/${Date.now()}_${file.name}`);
       const metadata = { contentType: 'application/pdf' };
-      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
-
-      const downloadURL = await new Promise<string>((resolve, reject) => {
-        uploadTask.on('state_changed', 
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            console.log('Upload is ' + progress + '% done');
-          }, 
-          reject, 
-          () => getDownloadURL(uploadTask.snapshot.ref).then(resolve).catch(reject)
-        );
-      });
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
       setPdfUrl(downloadURL);
 
       showToast('পিডিএফ সফলভাবে আপলোড হয়েছে!');
@@ -1306,6 +1303,12 @@ export const AdminPanelPage: React.FC = () => {
             Books
           </button>
           <button
+            onClick={() => setActiveTab('simple-books')}
+            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'simple-books' ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400'}`}
+          >
+            Simple Books
+          </button>
+          <button
             onClick={() => setActiveTab('users')}
             className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400'}`}
           >
@@ -1452,6 +1455,54 @@ export const AdminPanelPage: React.FC = () => {
                 )}
               </div>
             </section>
+          </div>
+        ) : activeTab === 'simple-books' ? (
+          <div className="p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl">
+            <h2 className="text-xl font-black mb-6">সহজ বই আপলোড</h2>
+            <div className="space-y-4">
+              <input type="text" placeholder="বইয়ের নাম" value={simpleBookTitle} onChange={(e) => setSimpleBookTitle(e.target.value)} className="w-full p-3 rounded-xl border" />
+              <select value={simpleBookCategory} onChange={(e) => setSimpleBookCategory(e.target.value)} className="w-full p-3 rounded-xl border">
+                <option value="">ক্যাটাগরি সিলেক্ট করুন</option>
+                {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
+              </select>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold mb-1">কভার ছবি</label>
+                  <input type="file" accept="image/*" onChange={(e) => setSimpleBookCover(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold mb-1">পিডিএফ ফাইল</label>
+                  <input type="file" accept="application/pdf" onChange={(e) => setSimpleBookFile(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
+                </div>
+              </div>
+              <button onClick={handleSimpleBookUpload} disabled={isUploadingSimpleBook} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">
+                {isUploadingSimpleBook ? 'আপলোড হচ্ছে...' : 'আপলোড করুন'}
+              </button>
+            </div>
+          </div>
+        ) : activeTab === 'simple-books' ? (
+          <div className="p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl">
+            <h2 className="text-xl font-black mb-6">সহজ বই আপলোড</h2>
+            <div className="space-y-4">
+              <input type="text" placeholder="বইয়ের নাম" value={simpleBookTitle} onChange={(e) => setSimpleBookTitle(e.target.value)} className="w-full p-3 rounded-xl border" />
+              <select value={simpleBookCategory} onChange={(e) => setSimpleBookCategory(e.target.value)} className="w-full p-3 rounded-xl border">
+                <option value="">ক্যাটাগরি সিলেক্ট করুন</option>
+                {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
+              </select>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold mb-1">কভার ছবি</label>
+                  <input type="file" accept="image/*" onChange={(e) => setSimpleBookCover(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold mb-1">পিডিএফ ফাইল</label>
+                  <input type="file" accept="application/pdf" onChange={(e) => setSimpleBookFile(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
+                </div>
+              </div>
+              <button onClick={handleSimpleBookUpload} disabled={isUploadingSimpleBook} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">
+                {isUploadingSimpleBook ? 'আপলোড হচ্ছে...' : 'আপলোড করুন'}
+              </button>
+            </div>
           </div>
         ) : activeTab === 'users' ? (
           /* User Management Section */

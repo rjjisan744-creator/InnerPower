@@ -4,7 +4,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import fs from "fs";
+import multer from "multer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,6 +43,7 @@ try {
 const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
 const db = getFirestore(dbApp, databaseId);
 const auth = admin.auth(authApp);
+const storage = getStorage(dbApp);
 
 console.log(`Firestore initialized using ${dbApp.name === "db-app" ? "auto-detected" : "explicit"} project.`);
 console.log(`Targeting database: ${databaseId}`);
@@ -49,7 +52,43 @@ const server = express();
 server.use(express.json({ limit: '50mb' }));
 server.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+const upload = multer({ storage: multer.memoryStorage() });
+
 const PORT = 3000;
+
+// API routes
+server.post("/api/upload-book", upload.fields([{ name: 'cover' }, { name: 'file' }]), async (req, res) => {
+  try {
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (!files.cover || !files.file) {
+      return res.status(400).json({ error: "Cover and file are required" });
+    }
+
+    const coverFile = files.cover[0];
+    const bookFile = files.file[0];
+
+    const bucket = storage.bucket();
+    console.log("Bucket name:", bucket.name);
+    const coverRef = bucket.file(`simple_books/covers/${Date.now()}_${coverFile.originalname}`);
+    const fileRef = bucket.file(`simple_books/files/${Date.now()}_${bookFile.originalname}`);
+
+    console.log("Saving cover to:", coverRef.name);
+    await coverRef.save(coverFile.buffer, { contentType: coverFile.mimetype });
+    console.log("Saving book file to:", fileRef.name);
+    await fileRef.save(bookFile.buffer, { contentType: bookFile.mimetype });
+
+    const [coverUrl] = await coverRef.getSignedUrl({ action: 'read', expires: '03-01-2500' });
+    const [fileUrl] = await fileRef.getSignedUrl({ action: 'read', expires: '03-01-2500' });
+
+    res.json({ coverUrl, fileUrl });
+  } catch (error: any) {
+    console.error("Error uploading book:", error);
+    if (error.response) {
+        console.error("Gaxios response data:", JSON.stringify(error.response.data, null, 2));
+    }
+    res.status(500).json({ error: error.message, details: error.response?.data });
+  }
+});
 
 // Health check endpoint
 server.get("/api/health", (req, res) => {
