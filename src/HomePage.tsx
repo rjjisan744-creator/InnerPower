@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from './AppContext';
 import { CATEGORIES } from './constants';
-import { User, Book, Category, SimpleBook } from './types';
+import { User, Book, Category } from './types';
 import { LogOut, Settings, Shield, BookOpen, User as UserIcon, History, Bell, Send, MessageSquare, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FloatingActions } from './components/FloatingActions';
@@ -27,7 +27,6 @@ import {
 export const HomePage: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [books, setBooks] = useState<Book[]>([]);
-  const [simpleBooks, setSimpleBooks] = useState<SimpleBook[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [lockAllCategories, setLockAllCategories] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -175,12 +174,6 @@ export const HomePage: React.FC = () => {
         setBooks(booksData);
       }, (err) => console.error('HomePage: Books listener error:', err));
 
-      // Fetch Simple Books
-      const unsubSimpleBooks = onSnapshot(collection(db, 'simple_books'), (snapshot) => {
-        const simpleBooksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-        setSimpleBooks(simpleBooksData);
-      }, (err) => console.error('HomePage: Simple Books listener error:', err));
-
       // Fetch Categories
       const unsubCats = onSnapshot(query(collection(db, 'categories'), orderBy('sort_index', 'asc')), (snapshot) => {
         const catsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
@@ -270,7 +263,6 @@ export const HomePage: React.FC = () => {
       return () => {
         unsubUser();
         unsubBooks();
-        unsubSimpleBooks();
         unsubCats();
         unsubSettings();
         unsubUserNotifs();
@@ -476,6 +468,11 @@ export const HomePage: React.FC = () => {
           return;
         }
       }
+    }
+
+    if (book.pdf_url) {
+        window.open(book.pdf_url, '_blank');
+        return;
     }
     
     const lastPage = localStorage.getItem(`last_page_${book.id}`);
@@ -798,28 +795,6 @@ export const HomePage: React.FC = () => {
       </AnimatePresence>
 
       <main className="max-w-5xl mx-auto p-4 md:p-8">
-        {/* Simple Books List */}
-        {simpleBooks.length > 0 && (
-          <section className="mb-12">
-            <h2 className="text-xl font-black mb-6">সহজ বই</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-              {simpleBooks.map((book) => (
-                <motion.div
-                  key={book.id}
-                  whileHover={{ y: -8, scale: 1.02 }}
-                  className="group cursor-pointer"
-                  onClick={() => window.open(book.file_url, '_blank')}
-                >
-                  <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-lg mb-3">
-                    <img src={book.cover_url} alt={book.title} className="w-full h-full object-cover" />
-                  </div>
-                  <h3 className="font-bold text-sm text-zinc-900 dark:text-white truncate">{book.title}</h3>
-                </motion.div>
-              ))}
-            </div>
-          </section>
-        )}
-
         {/* Book List */}
         {filteredBooks.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">

@@ -66,7 +66,7 @@ service cloud.firestore {
                       isImmutable('has_pending_subscription') &&
                       // Allow setting referred_by and trial_ends_at ONLY ONCE (when referred_by is null)
                       (
-                        (resource.data.referred_by == null && request.resource.data.referred_by != null) ||
+                        (resource.data.get('referred_by', null) == null && request.resource.data.get('referred_by', null) != null) ||
                         (isImmutable('referred_by') && isImmutable('trial_ends_at'))
                       ) &&
                       // Allow demotion to user, but block unauthorized promotion to admin
@@ -135,7 +135,11 @@ service cloud.firestore {
     }
 
     match /notifications/{notifId} {
-      allow list: if isAuthenticated();
+      allow list: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.get('user_id', null) == null || 
+        resource.data.get('user_id', '') == request.auth.uid
+      );
       allow get: if isAuthenticated() && (
         isAdmin() ||
         (resource != null && (
@@ -147,14 +151,23 @@ service cloud.firestore {
     }
 
     match /notification_replies/{replyId} {
-      allow list: if isAuthenticated();
+      // Need to make sure notifications/support are accessible, but list rule for replies seems too generic.
+      allow list: if isAuthenticated() && (
+        isAdmin() ||
+        resource == null || // Allow if no resource (should not happen for list)
+        resource.data.get('user_id', '') == request.auth.uid
+      );
       allow get: if isAuthenticated();
       allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
       allow delete: if isAdmin();
     }
 
     match /support_messages/{msgId} {
-      allow list: if isAuthenticated();
+      allow list: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.get('user_id', '') == request.auth.uid || 
+        resource.data.get('user_id', '').matches("^web-.*")
+      );
       allow get: if isAdmin() || 
                      (isAuthenticated() && resource != null && resource.data.user_id == request.auth.uid) ||
                      (resource != null && resource.data.get('user_id', '') is string && resource.data.get('user_id', '').matches("^web-.*"));

@@ -65,14 +65,5 @@ export interface Book {
   created_at: string;
 }
 
-export interface SimpleBook {
-  id: string;
-  title: string;
-  category: string;
-  cover_url: string;
-  file_url: string;
-  created_at: string;
-}
-
 export type Language = 'en' | 'bn';
 export type Theme = 'light' | 'dark';

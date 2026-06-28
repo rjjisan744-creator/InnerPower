@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from './AppContext';
 import { CATEGORIES } from './constants';
-import { User, Book, Category, SimpleBook, Note } from './types';
+import { User, Book, Category, Note } from './types';
 import { Users, PlusCircle, ArrowLeft, Image as ImageIcon, BookOpen, FileText, Save, Search, Edit2, Trash2, X, Copy, Check, ChevronDown, ChevronUp, Trash, FileEdit, User as UserIcon, ArrowUpNarrowWide, Mail, Settings, History, File, MapPin, Bell, Send, MessageSquare, List, Lock, Unlock, Edit3, AlertCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from './firebase';
@@ -32,7 +32,7 @@ export const AdminPanelPage: React.FC = () => {
   const [bookReadersMap, setBookReadersMap] = useState<Record<string, string[]>>({});
   const [selectedBookForReaders, setSelectedBookForReaders] = useState<Book | null>(null);
   const [totalUniqueReaders, setTotalUniqueReaders] = useState(0);
-  const [activeTab, setActiveTab] = useState<'books' | 'users' | 'recycle' | 'settings' | 'referrals' | 'notifications' | 'categories' | 'subscriptions' | 'support' | 'simple-books'>('books');
+  const [activeTab, setActiveTab] = useState<'books' | 'users' | 'recycle' | 'settings' | 'referrals' | 'notifications' | 'categories' | 'subscriptions' | 'support'>('books');
   const [userSearch, setUserSearch] = useState('');
   const [userLimit, setUserLimit] = useState(100);
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'pending' | 'blocked' | 'active' | 'online' | 'offline' | 'expired'>('all');
@@ -69,6 +69,7 @@ export const AdminPanelPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [pages, setPages] = useState<string[]>(['']);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -85,49 +86,6 @@ export const AdminPanelPage: React.FC = () => {
   const [editingTrialUserId, setEditingTrialUserId] = useState<string | null>(null);
   const [newTrialDate, setNewTrialDate] = useState('');
 
-  const [simpleBookTitle, setSimpleBookTitle] = useState('');
-  const [simpleBookCover, setSimpleBookCover] = useState<File | null>(null);
-  const [simpleBookFile, setSimpleBookFile] = useState<File | null>(null);
-  const [simpleBookCategory, setSimpleBookCategory] = useState('');
-  const [isUploadingSimpleBook, setIsUploadingSimpleBook] = useState(false);
-  const [simpleBooks, setSimpleBooks] = useState<SimpleBook[]>([]);
-
-  const handleSimpleBookUpload = async () => {
-    if (!simpleBookTitle || !simpleBookCover || !simpleBookFile || !simpleBookCategory) {
-      alert('বইয়ের নাম, ক্যাটাগরি, কভার এবং পিডিএফ ফাইল সিলেক্ট করুন');
-      return;
-    }
-    setIsUploadingSimpleBook(true);
-    try {
-      const coverRef = ref(storage, `simple_books/covers/${Date.now()}_${simpleBookCover.name}`);
-      const fileRef = ref(storage, `simple_books/files/${Date.now()}_${simpleBookFile.name}`);
-      
-      await uploadBytes(coverRef, simpleBookCover);
-      await uploadBytes(fileRef, simpleBookFile);
-      
-      const coverUrl = await getDownloadURL(coverRef);
-      const fileUrl = await getDownloadURL(fileRef);
-      
-      await addDoc(collection(db, 'simple_books'), {
-        title: simpleBookTitle,
-        category: simpleBookCategory,
-        cover_url: coverUrl,
-        file_url: fileUrl,
-        created_at: serverTimestamp()
-      });
-      
-      alert('বই সফলভাবে আপলোড হয়েছে!');
-      setSimpleBookTitle('');
-      setSimpleBookCategory('');
-      setSimpleBookCover(null);
-      setSimpleBookFile(null);
-    } catch (e) {
-      console.error('Upload error:', e);
-      alert('আপলোড ব্যর্থ হয়েছে: ' + (e instanceof Error ? e.message : 'Unknown error'));
-    } finally {
-      setIsUploadingSimpleBook(false);
-    }
-  };
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
@@ -270,11 +228,6 @@ export const AdminPanelPage: React.FC = () => {
         setIsLoading(false);
       });
 
-      console.log("AdminPanel: Setting up simple books listener...");
-      const unsubSimpleBooks = onSnapshot(collection(db, 'simple_books'), (snapshot) => {
-        setSimpleBooks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimpleBook)));
-      }, (err) => console.error('AdminPanel: Simple Books listener error:', err));
-
       console.log("AdminPanel: Setting up reading history listener...");
       // Limit reading history to last 500 entries to save quota and memory
       const unsubReadingHistory = onSnapshot(query(collection(db, "reading_history"), orderBy("read_at", "desc"), limit(500)), (snap) => {
@@ -405,7 +358,6 @@ export const AdminPanelPage: React.FC = () => {
       return () => {
         unsubUsers();
         unsubBooks();
-        unsubSimpleBooks();
         unsubReadingHistory();
         unsubDeletedBooks();
         unsubCategories();
@@ -714,15 +666,24 @@ export const AdminPanelPage: React.FC = () => {
     
     try {
       const storageRef = ref(storage, `books/${Date.now()}_${file.name}`);
-      const metadata = { contentType: 'application/pdf' };
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      setPdfUrl(downloadURL);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+      
+      const downloadURL = await new Promise<string>((resolve, reject) => {
+          uploadTask.on('state_changed', 
+              (snapshot) => {
+                  const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                  console.log('Upload is ' + progress + '% done');
+              }, 
+              (error) => reject(error), 
+              () => resolve(getDownloadURL(uploadTask.snapshot.ref))
+          );
+      });
 
+      setPdfUrl(downloadURL);
       showToast('পিডিএফ সফলভাবে আপলোড হয়েছে!');
     } catch (error) {
       console.error("Error uploading PDF:", error);
-      showToast('পিডিএফ আপলোড করতে সমস্যা হয়েছে।', 'error');
+      showToast('পিডিএফ আপলোড করতে সমস্যা হয়েছে: ' + (error instanceof Error ? error.message : String(error)), 'error');
     } finally {
       setIsProcessingPdf(false);
       if (e.target) e.target.value = '';
@@ -933,17 +894,38 @@ export const AdminPanelPage: React.FC = () => {
 
   const handleSaveBook = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!coverUrl) {
-      showToast('অনুগ্রহ করে একটি ছবি নির্বাচন করুন', 'error');
-      return;
+    setIsLoading(true); // Start loading
+
+    let finalPdfUrl = pdfUrl;
+    if (pdfFile) {
+        try {
+            const fileRef = ref(storage, `books/pdfs/${Date.now()}_${pdfFile.name}`);
+            const uploadTask = uploadBytesResumable(fileRef, pdfFile);
+            
+            finalPdfUrl = await new Promise((resolve, reject) => {
+                uploadTask.on('state_changed', 
+                    (snapshot) => {
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        console.log('Upload is ' + progress + '% done');
+                    }, 
+                    (error) => reject(error), 
+                    () => resolve(getDownloadURL(uploadTask.snapshot.ref))
+                );
+            }) as string;
+        } catch (error) {
+            console.error('Error uploading PDF:', error);
+            showToast('পিডিএফ আপলোড করতে সমস্যা হয়েছে: ' + (error instanceof Error ? error.message : String(error)), 'error');
+            setIsLoading(false); // Stop loading on error
+            return;
+        }
     }
 
-    const finalCategory = category.includes('New book') ? category : `New book, ${category}`;
+    const finalCategory = category;
     const bookData = {
       title,
       author,
       cover_url: coverUrl,
-      pdf_url: pdfUrl,
+      pdf_url: finalPdfUrl,
       category: finalCategory,
       description: description,
       is_deleted: false,
@@ -966,11 +948,13 @@ export const AdminPanelPage: React.FC = () => {
         const filteredPages = pages.filter(p => p.trim() !== '');
         
         // Save in chunks to avoid 1MB limit
-        const chunkSize = 10;
-        for (let i = 0; i < filteredPages.length; i += chunkSize) {
-            const chunk = filteredPages.slice(i, i + chunkSize);
-            const pageDocRef = doc(contentRef, `chunk_${String(Math.floor(i / chunkSize)).padStart(5, '0')}`);
-            await setDoc(pageDocRef, { pages: chunk });
+        if (filteredPages.length > 0) {
+            const chunkSize = 10;
+            for (let i = 0; i < filteredPages.length; i += chunkSize) {
+                const chunk = filteredPages.slice(i, i + chunkSize);
+                const pageDocRef = doc(contentRef, `chunk_${String(Math.floor(i / chunkSize)).padStart(5, '0')}`);
+                await setDoc(pageDocRef, { pages: chunk });
+            }
         }
         showToast('বইটি আপডেট করা হয়েছে!');
       } else {
@@ -980,18 +964,22 @@ export const AdminPanelPage: React.FC = () => {
         const filteredPages = pages.filter(p => p.trim() !== '');
         
         // Save in chunks to avoid 1MB limit
-        const chunkSize = 10;
-        for (let i = 0; i < filteredPages.length; i += chunkSize) {
-            const chunk = filteredPages.slice(i, i + chunkSize);
-            const pageDocRef = doc(contentRef, `chunk_${String(Math.floor(i / chunkSize)).padStart(5, '0')}`);
-            await setDoc(pageDocRef, { pages: chunk });
+        if (filteredPages.length > 0) {
+            const chunkSize = 10;
+            for (let i = 0; i < filteredPages.length; i += chunkSize) {
+                const chunk = filteredPages.slice(i, i + chunkSize);
+                const pageDocRef = doc(contentRef, `chunk_${String(Math.floor(i / chunkSize)).padStart(5, '0')}`);
+                await setDoc(pageDocRef, { pages: chunk });
+            }
         }
         showToast('বইটি সফলভাবে যোগ করা হয়েছে!');
       }
       resetForm();
     } catch (error) {
       console.error('Error saving book:', error);
-      showToast('Failed to save book', 'error');
+      showToast('Failed to save book: ' + (error instanceof Error ? error.message : String(error)), 'error');
+    } finally {
+        setIsLoading(false); // Stop loading
     }
   };
 
@@ -1098,6 +1086,10 @@ export const AdminPanelPage: React.FC = () => {
     setTitle('');
     setAuthor('');
     setCoverUrl('');
+    setPdfUrl('');
+    setPdfFile(null);
+    setPdfUrl('');
+    setPdfFile(null);
     setCategory('New book');
     setDescription('');
     setPages(['']);
@@ -1303,12 +1295,6 @@ export const AdminPanelPage: React.FC = () => {
             Books
           </button>
           <button
-            onClick={() => setActiveTab('simple-books')}
-            className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'simple-books' ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400'}`}
-          >
-            Simple Books
-          </button>
-          <button
             onClick={() => setActiveTab('users')}
             className={`flex-1 min-w-[80px] py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md' : 'text-zinc-400'}`}
           >
@@ -1455,54 +1441,6 @@ export const AdminPanelPage: React.FC = () => {
                 )}
               </div>
             </section>
-          </div>
-        ) : activeTab === 'simple-books' ? (
-          <div className="p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl">
-            <h2 className="text-xl font-black mb-6">সহজ বই আপলোড</h2>
-            <div className="space-y-4">
-              <input type="text" placeholder="বইয়ের নাম" value={simpleBookTitle} onChange={(e) => setSimpleBookTitle(e.target.value)} className="w-full p-3 rounded-xl border" />
-              <select value={simpleBookCategory} onChange={(e) => setSimpleBookCategory(e.target.value)} className="w-full p-3 rounded-xl border">
-                <option value="">ক্যাটাগরি সিলেক্ট করুন</option>
-                {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
-              </select>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold mb-1">কভার ছবি</label>
-                  <input type="file" accept="image/*" onChange={(e) => setSimpleBookCover(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-bold mb-1">পিডিএফ ফাইল</label>
-                  <input type="file" accept="application/pdf" onChange={(e) => setSimpleBookFile(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
-                </div>
-              </div>
-              <button onClick={handleSimpleBookUpload} disabled={isUploadingSimpleBook} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">
-                {isUploadingSimpleBook ? 'আপলোড হচ্ছে...' : 'আপলোড করুন'}
-              </button>
-            </div>
-          </div>
-        ) : activeTab === 'simple-books' ? (
-          <div className="p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-black/5 dark:border-white/5 shadow-xl">
-            <h2 className="text-xl font-black mb-6">সহজ বই আপলোড</h2>
-            <div className="space-y-4">
-              <input type="text" placeholder="বইয়ের নাম" value={simpleBookTitle} onChange={(e) => setSimpleBookTitle(e.target.value)} className="w-full p-3 rounded-xl border" />
-              <select value={simpleBookCategory} onChange={(e) => setSimpleBookCategory(e.target.value)} className="w-full p-3 rounded-xl border">
-                <option value="">ক্যাটাগরি সিলেক্ট করুন</option>
-                {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
-              </select>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold mb-1">কভার ছবি</label>
-                  <input type="file" accept="image/*" onChange={(e) => setSimpleBookCover(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-bold mb-1">পিডিএফ ফাইল</label>
-                  <input type="file" accept="application/pdf" onChange={(e) => setSimpleBookFile(e.target.files?.[0] || null)} className="w-full p-3 rounded-xl border" />
-                </div>
-              </div>
-              <button onClick={handleSimpleBookUpload} disabled={isUploadingSimpleBook} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">
-                {isUploadingSimpleBook ? 'আপলোড হচ্ছে...' : 'আপলোড করুন'}
-              </button>
-            </div>
           </div>
         ) : activeTab === 'users' ? (
           /* User Management Section */
@@ -2910,7 +2848,7 @@ export const AdminPanelPage: React.FC = () => {
                 <form onSubmit={handleSaveBook} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Step 1: Cover Image</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Step 1: Cover Image & PDF</div>
                       <div className="aspect-[3/4] border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50 dark:bg-zinc-950/50 flex flex-col items-center justify-center cursor-pointer overflow-hidden relative group" onClick={() => fileInputRef.current?.click()}>
                         <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
                         {imagePreview ? (
@@ -2925,6 +2863,10 @@ export const AdminPanelPage: React.FC = () => {
                           <ImageIcon className="text-white" size={24} />
                         </div>
                       </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">পিডিএফ ফাইল</label>
+                        <input type="file" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} accept="application/pdf" className="w-full p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm" />
+                      </div>
                     </div>
 
                     <div className="space-y-4">
@@ -2934,7 +2876,6 @@ export const AdminPanelPage: React.FC = () => {
                           <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                           <input
                             type="text"
-                            required
                             placeholder="বইয়ের নাম"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
@@ -2945,7 +2886,6 @@ export const AdminPanelPage: React.FC = () => {
                           <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                           <input
                             type="text"
-                            required
                             placeholder="লেখকের নাম"
                             value={author}
                             onChange={(e) => setAuthor(e.target.value)}
@@ -3057,7 +2997,6 @@ export const AdminPanelPage: React.FC = () => {
                                   )}
                                 </div>
                                 <textarea
-                                  required
                                   rows={4}
                                   placeholder={`পৃষ্ঠা ${index + 1} এর লেখা...`}
                                   value={page}
